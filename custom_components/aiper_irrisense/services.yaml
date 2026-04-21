@@ -1,0 +1,152 @@
+start_zone:
+  name: Start zone
+  description: >
+    Start watering a specific zone (region) on an Irrisense 2 device.
+    Issued as a setWorkMode MQTT command.
+  fields:
+    sn:
+      name: Device serial
+      description: Serial number of the Irrisense 2 (e.g. WRX60500001)
+      required: true
+      example: "WRX60500001"
+      selector:
+        text:
+    zone_id:
+      name: Zone ID
+      description: Region ID from the device's zone map
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 64
+          mode: box
+    region_type:
+      name: Region type
+      description: >
+        Optional override. If omitted, the integration looks up the region
+        type from the cached zone map. 0=area, 1=line, 2=point.
+      selector:
+        select:
+          options:
+            - label: Area
+              value: "0"
+            - label: Line
+              value: "1"
+            - label: Point
+              value: "2"
+    water_yield:
+      name: Water yield (mm)
+      description: >
+        For area/line zones. Legal presets are 0.1 / 0.25 / 0.5 (the app
+        labels these "3 mm / 6 mm / 13 mm" — label is decorative, the wire
+        value is the raw float). Off-preset values are silently dropped by
+        the device, so the integration snaps to the nearest preset before
+        publishing.
+      example: 0.25
+      selector:
+        number:
+          min: 0.1
+          max: 0.5
+          step: 0.05
+          mode: box
+          unit_of_measurement: mm
+    point_time:
+      name: Point time (minutes)
+      description: >
+        For point zones only (region_type=2). Legal presets are 1 / 5 / 10
+        minutes (matching app labels). Off-preset values are silently
+        dropped by the device; integration snaps before publishing.
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+          mode: box
+          unit_of_measurement: min
+    pesticide:
+      name: Pesticide mode
+      description: Start in pesticide-application mode instead of regular watering.
+      default: false
+      selector:
+        boolean:
+
+stop_zone:
+  name: Stop zone
+  description: Stop watering on the given zone.
+  fields:
+    sn:
+      name: Device serial
+      required: true
+      example: "WRX60500001"
+      selector:
+        text:
+    zone_id:
+      name: Zone ID
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 64
+          mode: box
+
+query_work_info:
+  name: Query work info
+  description: >
+    Ask the device to immediately publish its current work snapshot on upChan.
+    Useful to force a fast UI update.
+  fields:
+    sn:
+      name: Device serial
+      required: true
+      example: "WRX60500001"
+      selector:
+        text:
+
+debug_publish:
+  name: Debug — raw MQTT publish
+  description: >
+    Diagnostic only. Publishes the given raw string payload to the given
+    MQTT topic using the integration's existing AWS IoT connection.
+    Use to test payload variants while reverse-engineering command
+    acceptance. Payload is sent verbatim — no JSON wrapping.
+  fields:
+    sn:
+      name: Device serial
+      description: >
+        Any SN belonging to this account — selects which MQTT connection
+        (config entry) to publish through.
+      required: true
+      example: "WRX60500001"
+      selector:
+        text:
+    topic:
+      name: Topic
+      description: Full MQTT topic. Example — aiper/things/WRX60500001/downChan
+      required: true
+      example: "aiper/things/WRX60500001/downChan"
+      selector:
+        text:
+    payload:
+      name: Payload
+      description: >
+        Raw string to publish. Wire envelope for Irrisense downChan commands
+        is ``{"<cmd>": {...data}}`` — see examples below.
+      required: true
+      example: '{"workInfo":{}}'
+      selector:
+        text:
+          multiline: true
+    qos:
+      name: QoS
+      description: 0 or 1. Defaults to 1 (matching production publishes).
+      default: 1
+      selector:
+        select:
+          options:
+            - label: "0 (at most once)"
+              value: "0"
+            - label: "1 (at least once, PUBACK required)"
+              value: "1"

@@ -1,0 +1,894 @@
+# =============================================================================
+# IrriSense — "Garden Console" Dashboard (single device)
+# =============================================================================
+# A modern, glanceable dashboard for the Aiper Irrisense 2 integration,
+# sized for a single device called "IrriSense Garden".
+#
+# HOW TO USE
+# ----------
+# 1. Open your Irrigation dashboard in HA.
+# 2. Top-right menu -> "Raw configuration editor".
+# 3. Select-all, delete, paste EVERYTHING between the `# >>>> BEGIN` and
+#    `# <<<< END` markers (those two comment lines can stay too).
+# 4. Scroll down to the zone grid and update zone names, icons, and the
+#    lowercase `zname` variable to match your Aiper app. The zone's
+#    region type (Area / Line / Point) is derived live from the
+#    `select.irrisense_garden_watering_zone` options attribute, so you
+#    don't need to hard-code it.
+# 5. Save.
+#
+# -----------------------------------------------------------------------------
+# HACS cards required  (install all before pasting)
+# -----------------------------------------------------------------------------
+#   custom:mushroom             piitaya/lovelace-mushroom         (HACS default)
+#   custom:stack-in-card        custom-cards/stack-in-card        (HACS default)
+#   custom:button-card          custom-cards/button-card          (HACS default)
+#   custom:apexcharts-card      RomRider/apexcharts-card          (HACS default)
+#   custom:card-mod             thomasloven/lovelace-card-mod     (HACS default)
+#
+# All five are in the default HACS frontend registry — search, install,
+# hard-refresh the browser (Cmd/Ctrl-Shift-R), then paste this file.
+#
+# -----------------------------------------------------------------------------
+# Theme colors
+# -----------------------------------------------------------------------------
+#   Garden  -> cyan/sky   (#0ea5e9 primary, #06b6d4 accent, #0c4a6e deep)
+# Swap the hex codes below to retheme.
+#
+# Source: https://github.com/Merlz/ha-aiper-irrisense-2
+# =============================================================================
+
+
+# >>>> BEGIN RAW CONFIG  ======================================================
+title: Garden
+views:
+  - title: IrriSense Garden
+    path: garden
+    icon: mdi:sprinkler-variant
+    type: sections
+    max_columns: 1
+    sections:
+
+      # ##################################################################
+      # IrriSense Garden (cyan)
+      # ##################################################################
+      - type: grid
+        column_span: 1
+        cards:
+
+          # ── Title strip ───────────────────────────────────────────────
+          # Uses card-mod on a mushroom-template-card to get a soft cyan
+          # glow on the left edge (an accent bar that doubles as a
+          # "device alive" indicator — gets dimmed when offline).
+          - type: custom:mushroom-template-card
+            primary: IrriSense Garden
+            secondary: |-
+              {% set online = is_state('binary_sensor.irrisense_garden_online', 'on') %}
+              {% set rain = is_state('binary_sensor.irrisense_garden_rain_sensing_active', 'on') %}
+              {% set wifi = states('sensor.irrisense_garden_wifi_signal') %}
+              {% if not online %}Offline
+              {% elif rain %}Online · Rain sensing
+              {% elif wifi not in ['unknown','unavailable','none',none] %}Online · {{ wifi }} dBm
+              {% else %}Online
+              {% endif %}
+            icon: mdi:sprinkler-variant
+            icon_color: |-
+              {{ 'cyan' if is_state('binary_sensor.irrisense_garden_online', 'on') else 'disabled' }}
+            fill_container: true
+            tap_action:
+              action: more-info
+              entity: sensor.irrisense_garden_active_zone
+            card_mod:
+              style: |
+                ha-card {
+                  border: none;
+                  background: linear-gradient(135deg,
+                    rgba(14, 165, 233, 0.08) 0%,
+                    rgba(14, 165, 233, 0.02) 100%);
+                  border-left: 3px solid #0ea5e9;
+                  border-radius: 12px;
+                }
+                .primary { font-size: 20px !important; font-weight: 600; }
+
+          # ── HERO: only visible while watering ─────────────────────────
+          # A single stack-in-card containing: icon+title, time-remaining
+          # pill, chip strip, stop button. The whole thing gets a cyan
+          # gradient background via card-mod. Dual condition: hide as
+          # soon as EITHER the watering binary_sensor flips off OR the
+          # active_zone sensor goes Idle.
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: binary_sensor.irrisense_garden_watering
+                state: 'on'
+              - condition: state
+                entity: sensor.irrisense_garden_active_zone
+                state_not: Idle
+              - condition: state
+                entity: sensor.irrisense_garden_active_zone
+                state_not: unknown
+              - condition: state
+                entity: sensor.irrisense_garden_active_zone
+                state_not: unavailable
+            card:
+              type: custom:stack-in-card
+              mode: vertical
+              keep:
+                background: true
+                box_shadow: true
+                margin: true
+              card_mod:
+                style: |
+                  ha-card {
+                    background: linear-gradient(135deg, #0c4a6e 0%, #075985 55%, #0369a1 100%);
+                    border: none;
+                    box-shadow: 0 10px 30px -10px rgba(14, 165, 233, 0.4);
+                    overflow: hidden;
+                    position: relative;
+                  }
+                  ha-card::before {
+                    content: '';
+                    position: absolute;
+                    top: -50%;
+                    right: -20%;
+                    width: 400px;
+                    height: 400px;
+                    background: radial-gradient(circle, rgba(14, 165, 233, 0.25) 0%, transparent 70%);
+                    pointer-events: none;
+                  }
+              cards:
+
+                # -- zone name + pulsing water-drop icon --
+                - type: custom:mushroom-template-card
+                  primary: |-
+                    {{ states('sensor.irrisense_garden_active_zone') }}
+                  secondary: |-
+                    {{ state_attr('sensor.irrisense_garden_active_zone', 'region_type_label') or 'Watering' }}
+                  icon: mdi:water-circle
+                  icon_color: cyan
+                  fill_container: true
+                  tap_action:
+                    action: more-info
+                    entity: sensor.irrisense_garden_active_zone
+                  card_mod:
+                    style: |
+                      ha-card {
+                        background: transparent !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                      }
+                      .primary {
+                        font-size: 28px !important;
+                        font-weight: 700 !important;
+                        color: #f0f9ff !important;
+                        letter-spacing: -0.02em;
+                      }
+                      .secondary {
+                        color: #bae6fd !important;
+                        font-size: 13px !important;
+                        text-transform: uppercase;
+                        letter-spacing: 0.1em;
+                      }
+                      mushroom-shape-icon {
+                        --shape-color: rgba(14, 165, 233, 0.25) !important;
+                      }
+                      mushroom-shape-icon ha-icon {
+                        animation: ripple 2.5s ease-out infinite;
+                      }
+                      @keyframes ripple {
+                        0%, 100% { transform: scale(1); opacity: 1; }
+                        50%      { transform: scale(1.08); opacity: 0.7; }
+                      }
+
+                # -- Time Remaining pill --
+                # Wrapper stack-in-card owns the horizontal padding; the
+                # pill's ha-card background is a hard-stop linear-gradient
+                # (colours 0 -> p%, track colour past p%). Single flat
+                # element, clipped by border-radius.
+                - type: custom:stack-in-card
+                  mode: vertical
+                  keep:
+                    margin: true
+                    background: false
+                    box_shadow: false
+                  card_mod:
+                    style: |
+                      ha-card {
+                        background: transparent !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        padding: 6px 16px 10px !important;
+                      }
+                  cards:
+                    - type: custom:button-card
+                      show_icon: false
+                      show_name: true
+                      show_label: false
+                      name: Time Remaining
+                      custom_fields:
+                        val: |
+                          [[[
+                            const sn = 'sensor.irrisense_garden_active_zone';
+                            if (states[sn]?.attributes?.duration_pending) return '--:--';
+                            const dur = parseInt(states[sn]?.attributes?.duration_seconds) || 0;
+                            const elap = parseInt(states[sn]?.attributes?.elapsed_seconds) || 0;
+                            const rem = Math.max(0, dur - elap);
+                            const h = Math.floor(rem / 3600);
+                            const m = Math.floor((rem % 3600) / 60);
+                            const s = rem % 60;
+                            const pad = n => String(n).padStart(2, '0');
+                            return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+                          ]]]
+                      tap_action:
+                        action: none
+                      styles:
+                        card:
+                          - height: 32px
+                          - padding: 0 14px
+                          - margin: 0
+                          - overflow: hidden
+                          - border: 1px solid rgba(255, 255, 255, 0.18)
+                          - border-radius: 16px
+                          - box-shadow: 0 0 10px rgba(14, 165, 233, 0.35)
+                          - transition: background 0.8s ease
+                          - background: |
+                              [[[
+                                const sn = 'sensor.irrisense_garden_active_zone';
+                                if (states[sn]?.attributes?.duration_pending) {
+                                  return 'rgba(255,255,255,0.12)';
+                                }
+                                const dur = parseInt(states[sn]?.attributes?.duration_seconds) || 0;
+                                const elap = parseInt(states[sn]?.attributes?.elapsed_seconds) || 0;
+                                const p = dur > 0 ? Math.min(100, Math.round((elap / dur) * 100)) : 0;
+                                return `linear-gradient(to right, #0369a1 0%, #0ea5e9 ${p}%, rgba(255,255,255,0.12) ${p}%, rgba(255,255,255,0.12) 100%)`;
+                              ]]]
+                        grid:
+                          - grid-template-areas: '"n val"'
+                          - grid-template-columns: 1fr auto
+                          - align-items: center
+                          - width: 100%
+                        name:
+                          - font-size: 11px
+                          - font-weight: 600
+                          - color: rgba(255, 255, 255, 0.95)
+                          - text-transform: uppercase
+                          - letter-spacing: 0.1em
+                          - justify-self: start
+                          - text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4)
+                        custom_fields:
+                          val:
+                            - font-size: 14px
+                            - font-weight: 700
+                            - color: '#f0f9ff'
+                            - font-variant-numeric: tabular-nums
+                            - justify-self: end
+                            - text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4)
+
+
+                # -- chip strip: dose / pressure / pass / elapsed / stop --
+                - type: custom:mushroom-chips-card
+                  alignment: center
+                  chips:
+                    - type: template
+                      icon: mdi:water-opacity
+                      icon_color: cyan
+                      content: |-
+                        {{ state_attr('sensor.irrisense_garden_active_zone', 'dose_label') or '—' }}
+                      card_mod: &chip_style
+                        style: |
+                          ha-card {
+                            background: rgba(255,255,255,0.08) !important;
+                            border: 1px solid rgba(255,255,255,0.12) !important;
+                            color: #f0f9ff !important;
+                            backdrop-filter: blur(8px);
+                          }
+                    - type: template
+                      icon: mdi:gauge
+                      icon_color: cyan
+                      content: |-
+                        {% set p = state_attr('sensor.irrisense_garden_active_zone', 'water_pressure_kpa') | float(0) %}
+                        {{ p | round(0) | int }} kPa
+                      card_mod: *chip_style
+                    # PASS chip — shows current coverage pass, 1-indexed
+                    # (repair_layer is 0-indexed on the wire). No "of M";
+                    # total-pass estimation is unreliable. Dash when not
+                    # running or while duration is still a placeholder.
+                    - type: template
+                      icon: mdi:layers-triple
+                      icon_color: cyan
+                      content: |-
+                        {% set L = state_attr('sensor.irrisense_garden_active_zone', 'repair_layer') %}
+                        {% set pending = state_attr('sensor.irrisense_garden_active_zone', 'duration_pending') %}
+                        {% if L is none or pending %}Pass —{% else %}Pass {{ L | int + 1 }}{% endif %}
+                      card_mod: *chip_style
+                    - type: template
+                      icon: mdi:timer-sand
+                      icon_color: cyan
+                      content: |-
+                        {% set e = state_attr('sensor.irrisense_garden_active_zone', 'elapsed_seconds') | int(0) %}
+                        {{ '%d:%02d' % (e // 60, e % 60) }}
+                      card_mod: *chip_style
+                    # -- compact Stop action chip (red pill, inline) --
+                    # Presses the integration's built-in Stop button, which
+                    # reads the currently-running zone from the coordinator
+                    # and calls async_stop_zone internally.
+                    - type: template
+                      icon: mdi:stop
+                      icon_color: red
+                      content: Stop
+                      tap_action:
+                        action: call-service
+                        service: button.press
+                        target:
+                          entity_id: button.irrisense_garden_stop_watering
+                      card_mod:
+                        style: |
+                          ha-card {
+                            background: rgba(239, 68, 68, 0.22) !important;
+                            border: 1px solid rgba(239, 68, 68, 0.5) !important;
+                            color: #fecaca !important;
+                            backdrop-filter: blur(8px);
+                            font-weight: 600;
+                            transition: all 0.15s ease;
+                          }
+                          ha-card:hover {
+                            background: rgba(239, 68, 68, 0.32) !important;
+                            transform: translateY(-1px);
+                          }
+
+          # ── Zone -> Dose/Duration -> Start flow ───────────────────────
+          # UX model:
+          #   1. Tap a zone tile   -> writes `select.irrisense_garden_watering_zone`
+          #   2. Tap Dose OR Duration (the row matching the zone's type)
+          #   3. Tap the big Start button -> presses `button.irrisense_garden_start_watering`
+          #
+          # The integration exposes a SINGLE shape-shifting select:
+          #   `select.irrisense_garden_dose` — options swap to mm or min
+          #   depending on the selected zone's region type. Both pill rows
+          #   below write to that same entity; the irrelevant row is
+          #   greyed out and non-interactive.
+          #
+          # Zone-type tags (Area / Line / Point) on each tile are derived
+          # DYNAMICALLY from the select's `options` attribute — no manual
+          # labels to keep in sync when the device re-categorises a zone.
+
+          # ── Zones · tap to select ─────────────────────────────────────
+          - type: custom:button-card
+            name: Zones · tap to select
+            show_icon: false
+            styles:
+              card:
+                - background: transparent
+                - box-shadow: none
+                - padding: 0 0 0 4px
+                - height: 36px
+              grid:
+                - align-items: center
+              name:
+                - font-size: 11px
+                - font-weight: 600
+                - color: var(--secondary-text-color)
+                - letter-spacing: 0.1em
+                - text-transform: uppercase
+                - text-align: left
+
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+
+              # --- Grass -------------------------------------------------
+              - type: custom:button-card
+                name: Grass
+                icon: mdi:grass
+                show_label: true
+                variables:
+                  zname: grass
+                label: &garden_zone_label_tpl |
+                  [[[
+                    const z = variables.zname;
+                    const opts = states['select.irrisense_garden_watering_zone']?.attributes?.options || [];
+                    const m = opts.find(o => o.toLowerCase().startsWith(z + ' ('));
+                    const t = m && m.match(/\(([^)]+)\)/);
+                    return t ? t[1] : 'Zone';
+                  ]]]
+                tap_action: &garden_zone_tap_tpl
+                  action: call-service
+                  service: select.select_option
+                  service_data:
+                    entity_id: select.irrisense_garden_watering_zone
+                    option: |
+                      [[[
+                        const z = variables.zname;
+                        const opts = states['select.irrisense_garden_watering_zone']?.attributes?.options || [];
+                        return opts.find(o => o.toLowerCase().startsWith(z + ' (')) || '';
+                      ]]]
+                hold_action: &garden_zone_hold_tpl
+                  action: more-info
+                  entity: sensor.irrisense_garden_active_zone
+                styles: &garden_zone_styles_tpl
+                  card:
+                    - background: |
+                        [[[
+                          const z = variables.zname;
+                          const active = (states['sensor.irrisense_garden_active_zone']?.state || '').toLowerCase();
+                          const sel = (states['select.irrisense_garden_watering_zone']?.state || '').toLowerCase();
+                          if (active === z) return 'linear-gradient(135deg, #0c4a6e 0%, #0369a1 100%)';
+                          if (sel.startsWith(z + ' (')) return 'rgba(14, 165, 233, 0.14)';
+                          return 'var(--ha-card-background, var(--card-background-color))';
+                        ]]]
+                    - border: |
+                        [[[
+                          const z = variables.zname;
+                          const active = (states['sensor.irrisense_garden_active_zone']?.state || '').toLowerCase();
+                          const sel = (states['select.irrisense_garden_watering_zone']?.state || '').toLowerCase();
+                          if (active === z || sel.startsWith(z + ' (')) return '1px solid #38bdf8';
+                          return '1px solid var(--divider-color)';
+                        ]]]
+                    - border-radius: 14px
+                    - padding: 14px
+                    - min-height: 92px
+                    - transition: all 0.25s ease
+                    - box-shadow: |
+                        [[[
+                          const z = variables.zname;
+                          const active = (states['sensor.irrisense_garden_active_zone']?.state || '').toLowerCase();
+                          return active === z ? '0 8px 24px -8px rgba(56, 189, 248, 0.5)' : 'none';
+                        ]]]
+                  grid:
+                    - grid-template-areas: '"i" "n" "l"'
+                    - grid-template-rows: 1fr auto auto
+                    - justify-items: start
+                    - gap: 2px
+                  icon:
+                    - color: |
+                        [[[
+                          const z = variables.zname;
+                          const active = (states['sensor.irrisense_garden_active_zone']?.state || '').toLowerCase();
+                          return active === z ? '#7dd3fc' : '#64748b';
+                        ]]]
+                    - width: 26px
+                    - justify-self: start
+                  name:
+                    - font-size: 15px
+                    - font-weight: 600
+                    - color: |
+                        [[[
+                          const z = variables.zname;
+                          const active = (states['sensor.irrisense_garden_active_zone']?.state || '').toLowerCase();
+                          return active === z ? '#f0f9ff' : 'var(--primary-text-color)';
+                        ]]]
+                    - justify-self: start
+                  label:
+                    # Pill badge · amber when the zone's region is Point,
+                    # neutral for Area / Line. Type string is parsed from
+                    # the select's `options` attribute, so a rename on the
+                    # device flows through automatically.
+                    - font-size: 10px
+                    - font-weight: 700
+                    - letter-spacing: 0.14em
+                    - text-transform: uppercase
+                    - padding: 3px 9px
+                    - border-radius: 999px
+                    - width: fit-content
+                    - margin-top: 4px
+                    - justify-self: start
+                    - background: |
+                        [[[
+                          const z = variables.zname;
+                          const opts = states['select.irrisense_garden_watering_zone']?.attributes?.options || [];
+                          const m = opts.find(o => o.toLowerCase().startsWith(z + ' ('));
+                          const t = m && m.match(/\(([^)]+)\)/);
+                          return (t && t[1] === 'Point') ? 'rgba(251, 191, 36, 0.14)' : 'rgba(255, 255, 255, 0.06)';
+                        ]]]
+                    - border: |
+                        [[[
+                          const z = variables.zname;
+                          const opts = states['select.irrisense_garden_watering_zone']?.attributes?.options || [];
+                          const m = opts.find(o => o.toLowerCase().startsWith(z + ' ('));
+                          const t = m && m.match(/\(([^)]+)\)/);
+                          return (t && t[1] === 'Point') ? '1px solid rgba(251, 191, 36, 0.35)' : '1px solid rgba(255, 255, 255, 0.12)';
+                        ]]]
+                    - color: |
+                        [[[
+                          const z = variables.zname;
+                          const opts = states['select.irrisense_garden_watering_zone']?.attributes?.options || [];
+                          const m = opts.find(o => o.toLowerCase().startsWith(z + ' ('));
+                          const t = m && m.match(/\(([^)]+)\)/);
+                          if (t && t[1] === 'Point') return '#fcd34d';
+                          return 'var(--secondary-text-color)';
+                        ]]]
+
+              # --- Plants ------------------------------------------------
+              - type: custom:button-card
+                name: Plants
+                icon: mdi:sprout
+                show_label: true
+                variables:
+                  zname: plants
+                label: *garden_zone_label_tpl
+                tap_action: *garden_zone_tap_tpl
+                hold_action: *garden_zone_hold_tpl
+                styles: *garden_zone_styles_tpl
+
+              # --- Trees -------------------------------------------------
+              - type: custom:button-card
+                name: Trees
+                icon: mdi:pine-tree
+                show_label: true
+                variables:
+                  zname: trees
+                label: *garden_zone_label_tpl
+                tap_action: *garden_zone_tap_tpl
+                hold_action: *garden_zone_hold_tpl
+                styles: *garden_zone_styles_tpl
+
+              # Add more tiles here by copying one of the blocks above.
+              # Only three things change per tile: `name`, `icon`, and
+              # `variables.zname` (lowercase match of the zone's name as
+              # shown in `select.irrisense_garden_watering_zone` options).
+
+          # ── Dose · Area / Line zones ──────────────────────────────────
+          # Fades + becomes non-interactive when the currently-selected
+          # zone is a Point (which uses the Duration row instead). Both
+          # rows write to the SAME shape-shifting `select.*_dose` entity.
+          - type: custom:button-card
+            name: Dose · mm  (Area / Line)
+            show_icon: false
+            styles:
+              card:
+                - background: transparent
+                - box-shadow: none
+                - padding: 0 0 0 4px
+                - height: 36px
+                - opacity: &garden_dose_opacity_tpl |
+                    [[[
+                      const raw = states['select.irrisense_garden_watering_zone']?.state || '';
+                      const m = raw.match(/\(([^)]+)\)/);
+                      return (m && m[1] === 'Point') ? '0.35' : '1';
+                    ]]]
+              grid:
+                - align-items: center
+              name:
+                - font-size: 10px
+                - font-weight: 600
+                - color: var(--secondary-text-color)
+                - letter-spacing: 0.12em
+                - text-transform: uppercase
+                - text-align: left
+
+          - type: horizontal-stack
+            cards:
+              - type: custom:button-card
+                entity: select.irrisense_garden_dose
+                name: 3 mm
+                show_icon: false
+                tap_action:
+                  action: call-service
+                  service: select.select_option
+                  service_data:
+                    entity_id: select.irrisense_garden_dose
+                    option: 3 mm
+                state:
+                  - value: 3 mm
+                    styles: &garden_pill_active_styles
+                      card:
+                        - background: 'linear-gradient(135deg, #0ea5e9 0%, #22d3ee 100%)'
+                        - border: 1px solid '#38bdf8'
+                        - box-shadow: 0 4px 14px -4px rgba(56, 189, 248, 0.55)
+                      name:
+                        - color: '#f0f9ff'
+                styles: &garden_dose_pill_base
+                  card:
+                    - background: rgba(255,255,255,0.04)
+                    - border: 1px solid var(--divider-color)
+                    - border-radius: 999px
+                    - padding: 10px 14px
+                    - min-height: 40px
+                    - margin: 4px 3px
+                    - transition: all 0.2s ease
+                    - opacity: *garden_dose_opacity_tpl
+                    - pointer-events: |
+                        [[[
+                          const raw = states['select.irrisense_garden_watering_zone']?.state || '';
+                          const m = raw.match(/\(([^)]+)\)/);
+                          return (m && m[1] === 'Point') ? 'none' : 'auto';
+                        ]]]
+                  name:
+                    - font-size: 13px
+                    - font-weight: 600
+              - type: custom:button-card
+                entity: select.irrisense_garden_dose
+                name: 6 mm
+                show_icon: false
+                tap_action:
+                  action: call-service
+                  service: select.select_option
+                  service_data:
+                    entity_id: select.irrisense_garden_dose
+                    option: 6 mm
+                state:
+                  - value: 6 mm
+                    styles: *garden_pill_active_styles
+                styles: *garden_dose_pill_base
+              - type: custom:button-card
+                entity: select.irrisense_garden_dose
+                name: 13 mm
+                show_icon: false
+                tap_action:
+                  action: call-service
+                  service: select.select_option
+                  service_data:
+                    entity_id: select.irrisense_garden_dose
+                    option: 13 mm
+                state:
+                  - value: 13 mm
+                    styles: *garden_pill_active_styles
+                styles: *garden_dose_pill_base
+
+          # ── Duration · Point zones ────────────────────────────────────
+          - type: custom:button-card
+            name: Duration · min  (Point)
+            show_icon: false
+            styles:
+              card:
+                - background: transparent
+                - box-shadow: none
+                - padding: 0 0 0 4px
+                - height: 36px
+                - opacity: &garden_dur_opacity_tpl |
+                    [[[
+                      const raw = states['select.irrisense_garden_watering_zone']?.state || '';
+                      const m = raw.match(/\(([^)]+)\)/);
+                      return (m && m[1] === 'Point') ? '1' : '0.35';
+                    ]]]
+              grid:
+                - align-items: center
+              name:
+                - font-size: 10px
+                - font-weight: 600
+                - color: var(--secondary-text-color)
+                - letter-spacing: 0.12em
+                - text-transform: uppercase
+                - text-align: left
+
+          - type: horizontal-stack
+            cards:
+              - type: custom:button-card
+                entity: select.irrisense_garden_dose
+                name: 1 min
+                show_icon: false
+                tap_action:
+                  action: call-service
+                  service: select.select_option
+                  service_data:
+                    entity_id: select.irrisense_garden_dose
+                    option: 1 min
+                state:
+                  - value: 1 min
+                    styles: *garden_pill_active_styles
+                styles: &garden_dur_pill_base
+                  card:
+                    - background: rgba(255,255,255,0.04)
+                    - border: 1px solid var(--divider-color)
+                    - border-radius: 999px
+                    - padding: 10px 14px
+                    - min-height: 40px
+                    - margin: 4px 3px
+                    - transition: all 0.2s ease
+                    - opacity: *garden_dur_opacity_tpl
+                    - pointer-events: |
+                        [[[
+                          const raw = states['select.irrisense_garden_watering_zone']?.state || '';
+                          const m = raw.match(/\(([^)]+)\)/);
+                          return (m && m[1] === 'Point') ? 'auto' : 'none';
+                        ]]]
+                  name:
+                    - font-size: 13px
+                    - font-weight: 600
+              - type: custom:button-card
+                entity: select.irrisense_garden_dose
+                name: 5 min
+                show_icon: false
+                tap_action:
+                  action: call-service
+                  service: select.select_option
+                  service_data:
+                    entity_id: select.irrisense_garden_dose
+                    option: 5 min
+                state:
+                  - value: 5 min
+                    styles: *garden_pill_active_styles
+                styles: *garden_dur_pill_base
+              - type: custom:button-card
+                entity: select.irrisense_garden_dose
+                name: 10 min
+                show_icon: false
+                tap_action:
+                  action: call-service
+                  service: select.select_option
+                  service_data:
+                    entity_id: select.irrisense_garden_dose
+                    option: 10 min
+                state:
+                  - value: 10 min
+                    styles: *garden_pill_active_styles
+                styles: *garden_dur_pill_base
+
+          # ── Start button ──────────────────────────────────────────────
+          # Presses the integration's built-in Start button, which reads
+          # the Zone + Dose selects and dispatches `setWorkMode`. Dims
+          # and becomes non-interactive when no zone is selected.
+          #
+          # `show_icon: false` is required for a short pill — button-card
+          # with ANY icon inflates to the default 3-card-unit height.
+          - type: custom:button-card
+            name: Start watering
+            show_icon: false
+            tap_action:
+              action: call-service
+              service: button.press
+              target:
+                entity_id: button.irrisense_garden_start_watering
+            styles:
+              card:
+                - background: |
+                    [[[
+                      const sel = states['select.irrisense_garden_watering_zone']?.state;
+                      return (sel && sel !== 'unknown' && sel !== 'unavailable')
+                        ? 'linear-gradient(135deg, #0ea5e9 0%, #22d3ee 100%)'
+                        : 'rgba(148, 163, 184, 0.18)';
+                    ]]]
+                - border: 1px solid rgba(56, 189, 248, 0.45)
+                - border-radius: 14px
+                - padding: 10px 14px
+                - min-height: 40px
+                - margin-top: 14px
+                - transition: all 0.2s ease
+                - box-shadow: |
+                    [[[
+                      const sel = states['select.irrisense_garden_watering_zone']?.state;
+                      return (sel && sel !== 'unknown' && sel !== 'unavailable')
+                        ? '0 6px 18px -6px rgba(56, 189, 248, 0.55)'
+                        : 'none';
+                    ]]]
+                - opacity: |
+                    [[[
+                      const sel = states['select.irrisense_garden_watering_zone']?.state;
+                      return (sel && sel !== 'unknown' && sel !== 'unavailable') ? '1' : '0.5';
+                    ]]]
+                - pointer-events: |
+                    [[[
+                      const sel = states['select.irrisense_garden_watering_zone']?.state;
+                      return (sel && sel !== 'unknown' && sel !== 'unavailable') ? 'auto' : 'none';
+                    ]]]
+              name:
+                - font-size: 15px
+                - font-weight: 700
+                - color: '#f0f9ff'
+                - letter-spacing: 0.02em
+                - text-align: center
+
+          # ── Water delivered (daily bars, last 7 days) ─────────────────
+          # `total_water_delivered` is a `total_increasing` sensor — each
+          # watering run adds to it. apexcharts-card's `group_by: diff`
+          # with a 1-day duration subtracts the start-of-day value from
+          # the end-of-day value to get per-day consumption.
+          - type: custom:apexcharts-card
+            graph_span: 7d
+            span:
+              end: day
+            header:
+              show: true
+              title: Water delivered · 7 days
+              show_states: true
+              colorize_states: true
+            cache: true
+            series:
+              - entity: sensor.irrisense_garden_total_water_delivered
+                name: Daily
+                type: column
+                color: '#0ea5e9'
+                group_by:
+                  func: diff
+                  duration: 1d
+            apex_config:
+              chart:
+                height: 180
+              plotOptions:
+                bar:
+                  borderRadius: 6
+                  columnWidth: 55%
+              grid:
+                borderColor: 'rgba(255,255,255,0.06)'
+              xaxis:
+                labels:
+                  style:
+                    colors: 'var(--secondary-text-color)'
+              yaxis:
+                labels:
+                  style:
+                    colors: 'var(--secondary-text-color)'
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 14px;
+                }
+
+          # ── Totals row (lifetime counters) ────────────────────────────
+          - type: custom:mushroom-chips-card
+            alignment: justify
+            chips:
+              - type: entity
+                entity: sensor.irrisense_garden_total_water_delivered
+                icon: mdi:water
+                icon_color: cyan
+                content_info: state
+                name: Delivered
+              - type: entity
+                entity: sensor.irrisense_garden_total_water_saved
+                icon: mdi:water-check
+                icon_color: cyan
+                content_info: state
+                name: Saved
+              - type: entity
+                entity: sensor.irrisense_garden_watering_events
+                icon: mdi:counter
+                icon_color: cyan
+                content_info: state
+                name: Runs
+
+          # ── Device summary ────────────────────────────────────────────
+          # No firmware_version sensor exists on this integration (the
+          # firmware is visible on the device registry page instead).
+          # Rain-sensing + wifi give us a richer health view anyway.
+          - type: entities
+            title: Device
+            show_header_toggle: false
+            state_color: true
+            entities:
+              - entity: binary_sensor.irrisense_garden_online
+                name: Status
+              - entity: binary_sensor.irrisense_garden_rain_sensing_active
+                name: Rain sensor
+              - entity: sensor.irrisense_garden_last_watered_zone
+                name: Last zone
+                secondary_info: last-changed
+              - entity: sensor.irrisense_garden_wifi_signal
+                name: WiFi signal
+# <<<< END RAW CONFIG  ========================================================
+
+
+# =============================================================================
+# Troubleshooting
+# =============================================================================
+#
+# Hero card doesn't appear when a zone starts
+#   -> The conditional hinges on `binary_sensor.irrisense_garden_watering`.
+#     Check that it transitions to `on` in Developer Tools.
+#
+# Zone tiles don't highlight when that zone is running
+#   -> The `[[[ ... ]]]` JS templates compare the lowercase `zname`
+#     variable against the start of the active-zone string. Ensure
+#     `variables.zname` matches the start of the zone's name in
+#     `select.irrisense_garden_watering_zone` options.
+#
+# Zone tile tap does nothing
+#   -> Developer Tools -> States -> `select.irrisense_garden_watering_zone`.
+#     Check the `options` attribute lists your zone with a region-type
+#     suffix in parentheses, e.g. "Grass (Area)".
+#
+# Apexcharts shows "No data"
+#   -> The history integration needs a few run cycles to build up. New
+#     installs start empty.
+#
+# -----------------------------------------------------------------------------
+# Adding more zones
+# -----------------------------------------------------------------------------
+# Copy any of the button-card blocks inside the zone grid. Change:
+#   1. `name:`      — what shows on the tile
+#   2. `icon:`      — any mdi icon
+#   3. `variables.zname:` — lowercase match of the zone's name (the part
+#                           before the region-type suffix in the select's
+#                           `options` attribute)
+# =============================================================================

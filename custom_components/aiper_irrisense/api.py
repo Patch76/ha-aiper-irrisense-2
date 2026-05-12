@@ -33,6 +33,7 @@ from .const import (
     CMD_SET_WORK_MODE,
     CMD_WORK_INFO,
     CMD_WR_CONTROL,
+    IRRISENSE_SERIAL_PREFIXES,
     MODE_PESTICIDE,
     MODE_WATERING,
     REGION_TYPE_AREA,
@@ -483,9 +484,9 @@ class IrrisenseApi:
                 sn = device.get("sn")
                 if not sn:
                     continue
-                # Filter: only Irrisense serials (WRX or WGX prefix). Leave other aiper
-                # devices to the sibling ha-aiper integration.
-                if not sn.upper().startswith(("WRX","WGX")):
+                # Filter: only Irrisense serials (WRX / WGX prefix). Leave other
+                # aiper devices to the sibling ha-aiper integration.
+                if not sn.upper().startswith(IRRISENSE_SERIAL_PREFIXES):
                     continue
                 self._devices[sn] = device
                 zid = device.get("zoneId") or device.get("zone_id")

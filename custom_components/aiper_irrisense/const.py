@@ -14,13 +14,14 @@ REQUEST_ID_KEY: Final = "K6!R]y_]Q!gA,5vy"
 # REST base URLs per region. The actual `domain` returned by /login is authoritative
 # — these are only used to issue the login call.
 API_ENDPOINTS: Final = {
-    "us": "https://apius.aiper.com",
+    "us": "https://apiamerica.aiper.com",
     "eu": "https://apieurope.aiper.com",
     "asia": "https://apiasia.aiper.com",
 }
 
-# Irrisense serial prefix.
-IRRISENSE_SERIAL_PREFIXES: Final = ("WRX",)
+# Irrisense serial prefixes. `WRX` is the original/online-store SKU; `WGX` is
+# the big-box-retail variant (e.g. Costco). Both speak the same wire protocol.
+IRRISENSE_SERIAL_PREFIXES: Final = ("WRX", "WGX")
 
 # Model string as written into the S3 zone-map path.
 IRRISENSE_MODEL: Final = "IrriSense_2"

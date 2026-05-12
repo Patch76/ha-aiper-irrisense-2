@@ -97,7 +97,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     devices = await hass.async_add_executor_job(api.get_devices)
     if not devices:
-        _LOGGER.warning("No Irrisense (WRX) devices found on this account")
+        _LOGGER.warning("No Irrisense (WRX/WGX) devices found on this account")
 
     coordinator = IrrisenseCoordinator(hass, api, entry)
     await coordinator.async_config_entry_first_refresh()

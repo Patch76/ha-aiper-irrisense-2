@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — US region hostname fix + broader WGX coverage
+
+### Fixed
+
+- **US region login failed** with `Name does not resolve` for
+  `apius.aiper.com`. Corrected hostname to `apiamerica.aiper.com` — the
+  Aiper cloud's actual US REST endpoint (the EU and Asia endpoints were
+  already correct and are unchanged).
+
+### Changed
+
+- Broadened the WGX serial-prefix handling started in 0.2.1 so the rest
+  of the integration's user-facing surface no longer says "WRX only":
+  - `IRRISENSE_SERIAL_PREFIXES` constant updated to `("WRX", "WGX")`.
+  - Config-flow description and `no_devices` error message (English +
+    translation) now reference both prefixes.
+  - "No devices found" warning log and `NoIrrisenseDevices` docstring
+    updated to match.
+
+  `WRX` is the original / online-store SKU; `WGX` is the big-box-retail
+  variant (e.g. Costco). Both speak the same wire protocol.
+
+## [0.2.1] — WGX serial-prefix support
+
+### Fixed
+
+- Device-list filter rejected Irrisense units with a `WGX` serial
+  prefix (sold via big-box retail) because it only matched `WRX`. The
+  filter in `api.get_devices` now accepts both prefixes.
+  (Thanks to [@n0k0m3](https://github.com/n0k0m3) — PR #1.)
+
 ## [0.2.0] — Initial public release
 
 First public release. The integration has been iterated on privately; this

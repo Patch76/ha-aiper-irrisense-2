@@ -99,6 +99,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not devices:
         _LOGGER.warning("No Irrisense (WRX/WGX) devices found on this account")
 
+    # Filter out devices the user has disabled in HA's device registry.
+    # Devices not yet in the registry are let through so first-time setup
+    # registers them; subsequent reloads honour the user's disable.
+    device_registry = dr.async_get(hass)
+
+    def _is_enabled(sn: str) -> bool:
+        if not sn:
+            return False
+        dev_entry = device_registry.async_get_device(identifiers={(DOMAIN, sn)})
+        return dev_entry is None or dev_entry.disabled_by is None
+
+    devices = [d for d in devices if _is_enabled(d.get("sn", ""))]
+
     coordinator = IrrisenseCoordinator(hass, api, entry)
     await coordinator.async_config_entry_first_refresh()
 

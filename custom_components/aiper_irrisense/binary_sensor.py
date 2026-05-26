@@ -66,10 +66,8 @@ class WateringBinarySensor(IrrisenseEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        # Delegate to active_zone_state so this entity tracks the same
-        # source-of-truth as ActiveZoneSensor — _ACTIVE_SOURCES covers
-        # up_realTimeProgress + freshest-frame picks, avoiding stale-slot
-        # divergence (issue #4).
+        # Delegate to active_zone_state — its freshest-frame pick across
+        # _ACTIVE_SOURCES avoids stale-slot divergence (issue #4).
         state = self.coordinator.active_zone_state(self._sn)
         return bool(state and state.get("is_running"))
 

@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — Bug fixes, point-zone watchdog, robust setup
+
+### Added
+
+- **Point-zone overrun watchdog** (#6, #18 by @Patch76). HA-side stop at
+  `point_time + 30s` grace when V3.8.7+ firmware mistracks point-zone
+  duration. Auto-cancels on a clean device stop or a manual Stop.
+- **Skip disabled devices** (#10, #14 by @Patch76). Devices disabled in HA's
+  device registry are excluded from setup, MQTT subscribe, and coordinator
+  refresh.
+- **Integration icon** (#8 by @CtznSniiips).
+
+### Changed
+
+- **Bounded setup latency** (#11, #19 by @Patch76). Login and device discovery
+  are wrapped in 15s timeouts that raise `ConfigEntryNotReady` /
+  `ConfigEntryAuthFailed` for proper Home Assistant retry, and the MQTT
+  connect moved to an entry-bound background task so a slow AWS IoT handshake
+  can't push setup past HA's 60s bootstrap window.
+- **Water totals now reported in gallons** (#22 by @tiloman). The backend
+  reports gallons; the sensors were mislabelled as liters and Home Assistant
+  converts for metric users. **Note:** existing history for the water-total
+  sensors will shift to the corrected unit.
+
+### Fixed
+
+- **`binary_sensor.*_watering` stuck `off`** during active runs (#4, #15 by
+  @Patch76). Now reads `is_running` from the coordinator's `active_zone_state()`
+  rather than walking a non-existent nested MQTT `data` wrapper.
+- **`water_pressure` permanently `unknown`** (#5, #16 by @Patch76). Removed the
+  unreliable sensor and the `water_pressure_kpa` attribute — V3.8.7 firmware
+  doesn't publish `waterpress` on progress frames and the fallback scan latched
+  stale values from unrelated shadow frames.
+
 ## [0.2.2] — US region hostname fix + broader WGX coverage
 
 ### Fixed

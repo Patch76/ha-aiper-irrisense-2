@@ -1,7 +1,9 @@
 """Weather platform for Aiper Irrisense 2 – Apple-WeatherKit-proxied cloud data.
 
-One location-level entity tied to the primary device, driven by HA home
-coordinates. Read-only. All field mapping lives in weather_helpers (tested).
+One weather entity per device, driven by HA home coordinates today (the
+coordinator's per-device coordinate seam lets per-device Aiper location be
+wired in later with no entity change). Read-only. All field mapping lives in
+weather_helpers (tested).
 """
 from __future__ import annotations
 

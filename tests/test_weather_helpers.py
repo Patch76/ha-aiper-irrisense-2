@@ -34,3 +34,48 @@ def test_parse_weather_payload_passthrough_dict():
 def test_parse_weather_payload_garbage_returns_none():
     assert wh.parse_weather_payload("not json") is None
     assert wh.parse_weather_payload(None) is None
+
+
+def test_ha_condition_known_codes():
+    assert wh.ha_condition("Clear", daylight=True) == "sunny"
+    assert wh.ha_condition("Clear", daylight=False) == "clear-night"
+    assert wh.ha_condition("PartlyCloudy", daylight=True) == "partlycloudy"
+    assert wh.ha_condition("Rain", daylight=True) == "rainy"
+    assert wh.ha_condition("HeavyRain", daylight=True) == "pouring"
+    assert wh.ha_condition("Thunderstorms", daylight=True) == "lightning-rainy"
+    assert wh.ha_condition("Snow", daylight=True) == "snowy"
+
+
+def test_ha_condition_unknown_falls_back():
+    assert wh.ha_condition("SomeNewAppleCode", daylight=True) == "cloudy"
+    assert wh.ha_condition(None, daylight=True) == "cloudy"
+
+
+def test_current_attrs_scales_fractions():
+    cur = json.loads(SAMPLE)["currentWeather"]
+    a = wh.current_attrs(cur)
+    assert a["temperature"] == 23.29
+    assert a["humidity"] == 85.0          # 0.85 -> %
+    assert a["cloud_coverage"] == 53.0    # 0.53 -> %
+    assert a["wind_bearing"] == 133
+    assert a["condition"] == "partlycloudy"  # PartlyCloudy, daylight false
+
+
+def test_daily_forecast_shape():
+    days = json.loads(SAMPLE)["forecastDaily"]["days"]
+    fc = wh.daily_forecast(days)
+    assert len(fc) == 2
+    d0 = fc[0]
+    assert d0["datetime"] == "2026-06-23T22:00:00Z"
+    assert d0["native_temperature"] == 24.1
+    assert d0["native_templow"] == 13.2
+    assert d0["precipitation_probability"] == 43.0   # 0.43 -> %
+    assert d0["native_precipitation"] == 0.0
+    assert fc[1]["condition"] == "rainy"
+    assert fc[1]["native_precipitation"] == 3.4
+
+
+def test_resolve_coords():
+    assert wh.resolve_coords(53.55, 9.99) == (53.55, 9.99)
+    assert wh.resolve_coords(None, 9.99) is None
+    assert wh.resolve_coords(0.0, 0.0) is None   # unset HA home -> skip

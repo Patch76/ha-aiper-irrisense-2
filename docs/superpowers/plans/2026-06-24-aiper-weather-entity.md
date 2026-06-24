@@ -110,10 +110,21 @@
 - [ ] **Step 2: Write the failing test** in `tests/test_weather_helpers.py`:
 
 ```python
+import importlib.util
 import json
 import pathlib
 
-from custom_components.aiper_irrisense import weather_helpers as wh
+# Load weather_helpers DIRECTLY by file path. A normal
+# `from custom_components.aiper_irrisense import weather_helpers` would execute
+# the package __init__.py, which imports homeassistant (not installed in this
+# test env). weather_helpers itself is pure stdlib, so file-loading it is clean.
+_WH_PATH = (
+    pathlib.Path(__file__).parents[1]
+    / "custom_components" / "aiper_irrisense" / "weather_helpers.py"
+)
+_spec = importlib.util.spec_from_file_location("weather_helpers", _WH_PATH)
+wh = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(wh)
 
 FIX = pathlib.Path(__file__).parent / "fixtures" / "weatherkit_sample.json"
 SAMPLE = FIX.read_text()

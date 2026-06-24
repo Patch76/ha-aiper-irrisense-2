@@ -58,7 +58,7 @@ def test_current_attrs_scales_fractions():
     assert a["humidity"] == 85.0          # 0.85 -> %
     assert a["cloud_coverage"] == 53.0    # 0.53 -> %
     assert a["wind_bearing"] == 133
-    assert a["condition"] == "partlycloudy"  # PartlyCloudy, daylight false
+    assert a["condition"] == "partlycloudy"  # PartlyCloudy -> partlycloudy
 
 
 def test_daily_forecast_shape():

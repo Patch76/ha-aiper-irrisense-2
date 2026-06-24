@@ -30,8 +30,6 @@ def parse_weather_payload(raw: str | dict | None) -> dict | None:
 # Apple WeatherKit conditionCode -> HA condition. daylight picks sunny/clear-night.
 # Covers the common set; unknown codes log once and fall back to "cloudy".
 _CONDITION_MAP: dict[str, str] = {
-    "Clear": "sunny",
-    "MostlyClear": "sunny",
     "PartlyCloudy": "partlycloudy",
     "MostlyCloudy": "cloudy",
     "Cloudy": "cloudy",
@@ -102,7 +100,7 @@ def current_attrs(current: dict) -> dict:
         "uv_index": c.get("uvIndex"),
         "visibility": c.get("visibility"),
         "cloud_coverage": _pct(c.get("cloudCover")),
-        "condition": ha_condition(c.get("conditionCode"), bool(c.get("daylight"))),
+        "condition": ha_condition(c.get("conditionCode"), bool(c.get("daylight", True))),
     }
 
 

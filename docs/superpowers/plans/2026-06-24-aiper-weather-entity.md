@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **REVISION 2026-06-24 (post-implementation):** Tasks 3–4 below describe the original
+> *single* weather entity (one instance on the primary device). That was revised to **one entity
+> per device** with coordinate-dedup in the coordinator — see the spec's "Decisions" section. The
+> code is the source of truth: coordinator stores `self._weather` per-SN via `weather_for(sn)` +
+> `_resolve_coords(sn)`; `weather.py` loops `coordinator.devices`. The TDD helper tasks (1–2) are
+> unchanged.
+
 **Goal:** Add a native Home Assistant `weather` entity to `aiper_irrisense`, fed by the live-confirmed Apple-WeatherKit-proxied `/weatherkit/getWeather` cloud endpoint, driven by HA's own home coordinates.
 
 **Architecture:** A pure-logic layer (`weather_helpers.py`: condition mapping, forecast/current parsing, coordinate resolution, JSON-payload parsing) with stdlib-pytest unit tests, plus an HA-glue layer (api read method, coordinator slot, `WeatherEntity`) validated live on the LB-HA testbed. Weather is one location-level fetch per interval, failure-isolated so a rate-limit can never break watering.

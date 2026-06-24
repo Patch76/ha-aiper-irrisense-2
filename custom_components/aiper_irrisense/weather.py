@@ -33,17 +33,21 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: IrrisenseCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    devices = coordinator.devices
-    if not devices:
-        return
-    sn = devices[0].get("sn")
-    if not sn:
-        return
-    async_add_entities([IrrisenseWeather(coordinator, sn)])
+    entities: list[IrrisenseWeather] = []
+    for dev in coordinator.devices:
+        sn = dev.get("sn")
+        if sn:
+            entities.append(IrrisenseWeather(coordinator, sn))
+    async_add_entities(entities)
 
 
 class IrrisenseWeather(IrrisenseEntity, WeatherEntity):
-    """Home weather for the garden, via the Aiper WeatherKit proxy."""
+    """Per-device weather via the Aiper WeatherKit proxy.
+
+    One entity per device. Today every device resolves to HA's home
+    coordinates (so all show the same data, fetched once); the coordinate
+    source is per-device in the coordinator, so per-device Aiper location
+    can be wired in later with no entity change."""
 
     _attr_supported_features = WeatherEntityFeature.FORECAST_DAILY
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
@@ -57,8 +61,12 @@ class IrrisenseWeather(IrrisenseEntity, WeatherEntity):
         self._attr_name = "Weather"
 
     @property
+    def _weather(self) -> dict[str, Any]:
+        return self.coordinator.weather_for(self._sn) or {}
+
+    @property
     def _current(self) -> dict[str, Any]:
-        return ((self.coordinator.weather or {}).get("currentWeather")) or {}
+        return self._weather.get("currentWeather") or {}
 
     @property
     def _attrs(self) -> dict[str, Any]:
@@ -66,7 +74,7 @@ class IrrisenseWeather(IrrisenseEntity, WeatherEntity):
 
     @property
     def available(self) -> bool:
-        return bool(self.coordinator.last_update_success) and bool(self.coordinator.weather)
+        return bool(self.coordinator.last_update_success) and bool(self._weather)
 
     @property
     def condition(self) -> str | None:
@@ -117,5 +125,5 @@ class IrrisenseWeather(IrrisenseEntity, WeatherEntity):
         return self._attrs["cloud_coverage"]
 
     async def async_forecast_daily(self) -> list[Forecast] | None:
-        days = ((self.coordinator.weather or {}).get("forecastDaily") or {}).get("days") or []
+        days = (self._weather.get("forecastDaily") or {}).get("days") or []
         return [Forecast(**item) for item in daily_forecast(days)]

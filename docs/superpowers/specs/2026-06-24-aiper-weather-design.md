@@ -44,10 +44,15 @@ Dead-end facts (also live-confirmed, kept for the record — NOT built):
 
 ## Decisions (from brainstorming)
 
-1. **Form**: one native HA `weather` entity (not individual sensors). Forecast via `async_forecast_daily`.
+1. **Form**: native HA `weather` entities (not individual sensors). Forecast via `async_forecast_daily`.
 2. **Coordinates**: HA home coordinates now (`hass.config.latitude/longitude`), via a single
-   swappable resolver function so per-device Aiper location can be added later without restructuring.
-3. **Cardinality**: one weather entity for now (home location). Per-device weather is a future change.
+   per-device resolver (`_resolve_coords(sn)`) so per-device Aiper location can be added later
+   without restructuring.
+3. **Cardinality**: **one weather entity per device** (revised 2026-06-24 — was "one entity on the
+   primary device", which was asymmetric and not the per-device end shape). All devices resolve to
+   HA home coords today (same data), so the coordinator **dedups the fetch by coordinate** — one API
+   call while coords match, scaling to N only when per-device location diverges. The entity set is
+   stable: per-device location later changes only the internal coord source, no entity churn.
 
 ## Architecture
 
@@ -68,18 +73,19 @@ def get_weather(self, latitude: float, longitude: float) -> dict | None
     Rationale: weather is one location-level call per interval (not per device/zone), and Apple
     WeatherKit only updates ~hourly — sub-hourly polling adds load with no data benefit. API rate
     limits are unknown, so default conservative + user-configurable.
-- `_resolve_weather_coords() -> tuple[float, float] | None` — returns
-  `(hass.config.latitude, hass.config.longitude)` today; the single seam for per-device location later.
-  Returns `None` (→ skip weather fetch, log once) if HA has no home location configured.
-- Weather stored at a **location-level key** in `coordinator.data` (e.g. `data["_weather"]`), NOT
-  duplicated per `sn` — one fetch, one payload. (Per-device later moves this under `data[sn]["weather"]`.)
+- `_resolve_coords(sn) -> tuple[float, float] | None` — returns
+  `(hass.config.latitude, hass.config.longitude)` for every `sn` today; the single per-device seam for
+  per-device location later. Returns `None` (→ skip that device's fetch) if HA has no home location.
+- Weather stored **per-SN** (`self._weather: dict[sn, payload]`, read via `weather_for(sn)`). The
+  refresh **dedups by coordinate**: build a `{coords: [sn,...]}` map, fetch once per unique coordinate,
+  assign to all SNs sharing it — one API call while coords match, N when per-device location diverges.
 - Fetch is additive and **failure-isolated**: a weather failure / rate-limit (e.g. 429) must be
   swallowed and must not fail the device refresh or touch the MQTT control path. Watering must keep
   working even if weather is rate-limited. Keep last-good payload on failure.
 
 ### 3. Weather entity — `weather.py`
-- `IrrisenseWeather(IrrisenseEntity, WeatherEntity)`, one instance, tied to the config entry
-  (hub-level / attached to the primary device — not per-zone).
+- `IrrisenseWeather(IrrisenseEntity, WeatherEntity)`, **one instance per device** (loop
+  `coordinator.devices`), each reading its own SN via `coordinator.weather_for(sn)`.
 - `_attr_supported_features = WeatherEntityFeature.FORECAST_DAILY`.
 - Native properties from `currentWeather`:
   | HA property | source |

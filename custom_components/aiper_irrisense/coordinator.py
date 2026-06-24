@@ -36,12 +36,14 @@ from .const import (
     CONF_MAP_REFRESH_HOURS,
     CONF_POLL_INTERVAL,
     CONF_REMINDER_REFRESH_HOURS,
+    CONF_WEATHER_REFRESH_HOURS,
     DEFAULT_FAST_SCAN_INTERVAL,
     DEFAULT_FAST_WINDOW_SECONDS,
     DEFAULT_HISTORY_REFRESH_HOURS,
     DEFAULT_MAP_REFRESH_HOURS,
     DEFAULT_REMINDER_REFRESH_HOURS,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_WEATHER_REFRESH_HOURS,
     DOMAIN,
     POINT_TIME_LOW,
     POINT_TIME_PRESETS,
@@ -160,6 +162,8 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._last_history_fetch: dict[str, float] = {}
         self._last_reminder_fetch: dict[str, float] = {}
         self._last_settings_fetch: dict[str, float] = {}
+        self._last_weather_fetch: float = 0.0
+        self._weather: dict[str, Any] | None = None
 
         # User's current Dashboard selection (controls card).
         # Populated by the ZoneSelect / DoseSelect entities; read by the
@@ -209,6 +213,7 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._map_refresh = int(opts.get(CONF_MAP_REFRESH_HOURS, DEFAULT_MAP_REFRESH_HOURS)) * 3600
         self._history_refresh = int(opts.get(CONF_HISTORY_REFRESH_HOURS, DEFAULT_HISTORY_REFRESH_HOURS)) * 3600
         self._reminder_refresh = int(opts.get(CONF_REMINDER_REFRESH_HOURS, DEFAULT_REMINDER_REFRESH_HOURS)) * 3600
+        self._weather_refresh = int(opts.get(CONF_WEATHER_REFRESH_HOURS, DEFAULT_WEATHER_REFRESH_HOURS)) * 3600
 
     # ------------------------------------------------------------------ #
     # Public helpers
@@ -218,6 +223,32 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     def devices(self) -> list[dict]:
         """Return the list of discovered Irrisense device dicts."""
         return list(self.api._devices.values())  # noqa: SLF001
+
+    @property
+    def weather(self) -> dict[str, Any] | None:
+        """Latest parsed WeatherKit payload (location-level), or None."""
+        return self._weather
+
+    async def _refresh_weather(self) -> None:
+        """Fetch weather at most every `_weather_refresh`. Failure-isolated:
+        any error is swallowed and last-good is kept so watering is never
+        affected by a weather rate-limit."""
+        from .weather_helpers import resolve_coords
+
+        now = time.time()
+        if self._weather is not None and now - self._last_weather_fetch < self._weather_refresh:
+            return
+        coords = resolve_coords(self.hass.config.latitude, self.hass.config.longitude)
+        if coords is None:
+            return
+        try:
+            w = await self.hass.async_add_executor_job(self.api.get_weather, coords[0], coords[1])
+        except Exception as err:  # noqa: BLE001 - weather must never break the refresh
+            _LOGGER.debug("weather refresh failed (ignored): %s", err)
+            return
+        if isinstance(w, dict):
+            self._weather = w
+            self._last_weather_fetch = now
 
     def get_device_data(self, sn: str) -> dict[str, Any]:
         return self._data.setdefault(sn, {})
@@ -256,6 +287,8 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     _LOGGER.debug("Skipping disabled device %s in refresh", sn)
                     continue
                 await self._refresh_device(sn, dev)
+
+            await self._refresh_weather()
 
             return self._data
         except Exception as err:

@@ -230,25 +230,24 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return self._weather
 
     async def _refresh_weather(self) -> None:
-        """Fetch weather at most every `_weather_refresh`. Failure-isolated:
+        """Fetch weather at most every `_weather_refresh`. Fully failure-isolated:
         any error is swallowed and last-good is kept so watering is never
         affected by a weather rate-limit."""
-        from .weather_helpers import resolve_coords
-
-        now = time.time()
-        if self._weather is not None and now - self._last_weather_fetch < self._weather_refresh:
-            return
-        coords = resolve_coords(self.hass.config.latitude, self.hass.config.longitude)
-        if coords is None:
-            return
         try:
+            from .weather_helpers import resolve_coords
+
+            now = time.time()
+            if self._weather is not None and now - self._last_weather_fetch < self._weather_refresh:
+                return
+            coords = resolve_coords(self.hass.config.latitude, self.hass.config.longitude)
+            if coords is None:
+                return
             w = await self.hass.async_add_executor_job(self.api.get_weather, coords[0], coords[1])
+            if isinstance(w, dict):
+                self._weather = w
+                self._last_weather_fetch = now
         except Exception as err:  # noqa: BLE001 - weather must never break the refresh
-            _LOGGER.debug("weather refresh failed (ignored): %s", err)
-            return
-        if isinstance(w, dict):
-            self._weather = w
-            self._last_weather_fetch = now
+            _LOGGER.debug("weather refresh failed (will retry next poll): %s", err)
 
     def get_device_data(self, sn: str) -> dict[str, Any]:
         return self._data.setdefault(sn, {})

@@ -64,13 +64,18 @@ def get_weather(self, latitude: float, longitude: float) -> dict | None
 
 ### 2. Coordinator — `coordinator.py`
 - New cached slot on its own cadence, mirroring the existing `_last_*_fetch` / `_*_refresh` tiers.
-  - `_weather_refresh` (seconds), default 30 min; `_last_weather_fetch` timestamp.
+  - `_weather_refresh` (seconds), default **1 h**; `_last_weather_fetch` timestamp.
+    Rationale: weather is one location-level call per interval (not per device/zone), and Apple
+    WeatherKit only updates ~hourly — sub-hourly polling adds load with no data benefit. API rate
+    limits are unknown, so default conservative + user-configurable.
 - `_resolve_weather_coords() -> tuple[float, float] | None` — returns
   `(hass.config.latitude, hass.config.longitude)` today; the single seam for per-device location later.
   Returns `None` (→ skip weather fetch, log once) if HA has no home location configured.
 - Weather stored at a **location-level key** in `coordinator.data` (e.g. `data["_weather"]`), NOT
   duplicated per `sn` — one fetch, one payload. (Per-device later moves this under `data[sn]["weather"]`.)
-- Fetch is additive: a weather failure must not fail the whole device refresh (wrap, keep last good).
+- Fetch is additive and **failure-isolated**: a weather failure / rate-limit (e.g. 429) must be
+  swallowed and must not fail the device refresh or touch the MQTT control path. Watering must keep
+  working even if weather is rate-limited. Keep last-good payload on failure.
 
 ### 3. Weather entity — `weather.py`
 - `IrrisenseWeather(IrrisenseEntity, WeatherEntity)`, one instance, tied to the config entry
@@ -123,7 +128,7 @@ the installed Home Assistant version during implementation, not assumed from thi
 
 ## Config / options
 - Add `Platform.WEATHER` to `PLATFORMS` in `__init__.py`.
-- Add `CONF_WEATHER_REFRESH_HOURS` + `DEFAULT_WEATHER_REFRESH_HOURS = 0.5` in `const.py`, wired into
+- Add `CONF_WEATHER_REFRESH_HOURS` + `DEFAULT_WEATHER_REFRESH_HOURS = 1` in `const.py`, wired into
   the coordinator options like the other `*_refresh_hours`.
 - `strings.json` / `translations/en.json`: option label + entity name.
 

@@ -60,3 +60,48 @@ def test_y_axis_is_flipped():
     # must land ABOVE the origin marker => smaller SVG y than the origin's.
     svg = mr.render_zone_map(REGIONS)
     assert 'cy="-78.0"' in svg  # emitted as flipped device coordinate
+
+
+ACTIVE = {
+    "is_running": True,
+    "zone_id": 4,
+    "progress": 0.37,   # 0..1 form
+    "x": 210.0,
+    "y": 300.0,
+}
+
+
+def test_running_render_highlights_active_zone_and_spray():
+    svg = mr.render_zone_map(REGIONS, ACTIVE)
+    assert 'class="spray"' in svg
+    assert "37%" in svg              # 0..1 progress normalised to percent
+    assert mr._ACTIVE_STROKE in svg  # active palette used
+
+
+def test_running_render_flips_spray_y():
+    svg = mr.render_zone_map(REGIONS, ACTIVE)
+    assert 'y2="-300.0"' in svg
+
+
+def test_render_key_stable_when_idle():
+    k1 = mr.render_key(REGIONS, None)
+    k2 = mr.render_key(REGIONS, {"is_running": False, "x": 1.0, "y": 2.0})
+    assert k1 == k2
+
+
+def test_render_key_ignores_sub_grid_jitter():
+    a1 = dict(ACTIVE, x=210.0, y=300.0)
+    a2 = dict(ACTIVE, x=214.0, y=296.0)  # < COORD_QUANT/2 movement
+    assert mr.render_key(REGIONS, a1) == mr.render_key(REGIONS, a2)
+
+
+def test_render_key_changes_on_zone_progress_and_big_move():
+    base = mr.render_key(REGIONS, ACTIVE)
+    assert mr.render_key(REGIONS, dict(ACTIVE, zone_id=3)) != base
+    assert mr.render_key(REGIONS, dict(ACTIVE, progress=0.42)) != base
+    assert mr.render_key(REGIONS, dict(ACTIVE, x=210.0 + 2 * mr.COORD_QUANT)) != base
+
+
+def test_render_key_changes_when_map_changes():
+    other = [dict(r, name=str(r.get("name")) + "!") for r in REGIONS]
+    assert mr.render_key(other, None) != mr.render_key(REGIONS, None)

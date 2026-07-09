@@ -96,9 +96,14 @@ def render_zone_map(regions: list[dict], active: dict | None = None) -> str:
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
     pad = max(max_x - min_x, max_y - min_y, 100.0) * 0.12
-    vb_x, vb_y = min_x - pad, min_y - pad
-    vb_w, vb_h = (max_x - min_x) + 2 * pad, (max_y - min_y) + 2 * pad
-    scale = max(vb_w, vb_h)
+    # Square viewBox, content centred: every device's map renders with the
+    # same aspect ratio, so side-by-side dashboard cards get equal heights
+    # regardless of how each garden's bounding box is shaped.
+    side = max((max_x - min_x), (max_y - min_y)) + 2 * pad
+    vb_x = min_x - pad - (side - ((max_x - min_x) + 2 * pad)) / 2
+    vb_y = min_y - pad - (side - ((max_y - min_y) + 2 * pad)) / 2
+    vb_w = vb_h = side
+    scale = side
     stroke = scale * 0.006
     font = scale * 0.035
     dot = scale * 0.012

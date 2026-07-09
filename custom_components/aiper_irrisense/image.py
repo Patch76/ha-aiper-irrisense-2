@@ -56,7 +56,10 @@ class ZoneMapImage(IrrisenseEntity, ImageEntity):
 
     def _current_render_state(self) -> tuple[list[dict], dict | None]:
         return (
-            self.coordinator.zones_for(self._sn),
+            # zone_geometry_for, NOT zones_for: the slimmed regions have their
+            # points[] stripped (api._parse_regions) — the renderer needs the
+            # raw shapes.
+            self.coordinator.zone_geometry_for(self._sn),
             self.coordinator.active_zone_state(self._sn),
         )
 

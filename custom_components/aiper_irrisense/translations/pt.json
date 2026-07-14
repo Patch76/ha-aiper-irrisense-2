@@ -47,6 +47,7 @@
   "entity": {
     "sensor": {
       "active_zone": {"name": "Zona ativa"},
+      "current_dose": {"name": "Dose atual"},
       "active_elapsed": {"name": "Segundos decorridos"},
       "active_total": {"name": "Duração total do ciclo (segundos)"},
       "active_progress": {"name": "Progresso"},
@@ -55,9 +56,12 @@
       "head_angle": {"name": "Ângulo da cabeça"},
       "spray_distance": {"name": "Alcance do jato"},
       "firmware": {"name": "Versão de firmware"},
-      "water_today": {"name": "Consumo de água hoje"},
-      "water_week": {"name": "Consumo de água esta semana"},
-      "water_month": {"name": "Consumo de água este mês"},
+      "firmware_mcu": {"name": "Firmware MCU"},
+      "firmware_valve": {"name": "Firmware da válvula"},
+      "wifi_rssi": {"name": "Sinal Wi-Fi"},
+      "total_water_yield": {"name": "Água total fornecida"},
+      "total_water_saving": {"name": "Água total poupada"},
+      "total_events": {"name": "Eventos de rega"},
       "last_zone": {"name": "Última zona regada"},
       "last_run_water": {"name": "Água do último ciclo"},
       "last_run_saving": {"name": "Água poupada no último ciclo"},
@@ -81,9 +85,14 @@
     },
     "binary_sensor": {
       "online": {"name": "Online"},
+      "rain_sensing": {"name": "Deteção de chuva ativa"},
       "watering": {"name": "Rega"},
       "session_conflict": {"name": "Conflito de sessão"},
       "last_run_fault": {"name": "Falha do último ciclo"}
+    },
+    "number": {
+      "watering_depth": {"name": "Profundidade de rega"},
+      "watering_duration": {"name": "Duração da rega"}
     },
     "select": {
       "nozzle_type": {"name": "Tipo de bico"},

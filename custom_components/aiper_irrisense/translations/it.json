@@ -47,6 +47,7 @@
   "entity": {
     "sensor": {
       "active_zone": {"name": "Zona attiva"},
+      "current_dose": {"name": "Dose attuale"},
       "active_elapsed": {"name": "Secondi trascorsi"},
       "active_total": {"name": "Durata totale ciclo (secondi)"},
       "active_progress": {"name": "Avanzamento"},
@@ -55,9 +56,12 @@
       "head_angle": {"name": "Angolo della testina"},
       "spray_distance": {"name": "Gittata"},
       "firmware": {"name": "Versione firmware"},
-      "water_today": {"name": "Consumo d'acqua oggi"},
-      "water_week": {"name": "Consumo d'acqua questa settimana"},
-      "water_month": {"name": "Consumo d'acqua questo mese"},
+      "firmware_mcu": {"name": "Firmware MCU"},
+      "firmware_valve": {"name": "Firmware valvola"},
+      "wifi_rssi": {"name": "Segnale Wi-Fi"},
+      "total_water_yield": {"name": "Acqua totale erogata"},
+      "total_water_saving": {"name": "Acqua totale risparmiata"},
+      "total_events": {"name": "Eventi di irrigazione"},
       "last_zone": {"name": "Ultima zona irrigata"},
       "last_run_water": {"name": "Acqua ultimo ciclo"},
       "last_run_saving": {"name": "Acqua risparmiata ultimo ciclo"},
@@ -81,9 +85,14 @@
     },
     "binary_sensor": {
       "online": {"name": "Online"},
+      "rain_sensing": {"name": "Rilevamento pioggia attivo"},
       "watering": {"name": "Irrigazione"},
       "session_conflict": {"name": "Conflitto di sessione"},
       "last_run_fault": {"name": "Guasto ultimo ciclo"}
+    },
+    "number": {
+      "watering_depth": {"name": "Profondità di irrigazione"},
+      "watering_duration": {"name": "Durata irrigazione"}
     },
     "select": {
       "nozzle_type": {"name": "Tipo di ugello"},

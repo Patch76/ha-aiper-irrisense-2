@@ -47,6 +47,7 @@
   "entity": {
     "sensor": {
       "active_zone": {"name": "Zone active"},
+      "current_dose": {"name": "Dose actuelle"},
       "active_elapsed": {"name": "Secondes écoulées"},
       "active_total": {"name": "Durée totale du cycle (secondes)"},
       "active_progress": {"name": "Progression"},
@@ -55,9 +56,12 @@
       "head_angle": {"name": "Angle de la tête"},
       "spray_distance": {"name": "Portée du jet"},
       "firmware": {"name": "Version du micrologiciel"},
-      "water_today": {"name": "Consommation d'eau aujourd'hui"},
-      "water_week": {"name": "Consommation d'eau cette semaine"},
-      "water_month": {"name": "Consommation d'eau ce mois-ci"},
+      "firmware_mcu": {"name": "Micrologiciel MCU"},
+      "firmware_valve": {"name": "Micrologiciel de la vanne"},
+      "wifi_rssi": {"name": "Signal Wi-Fi"},
+      "total_water_yield": {"name": "Eau totale distribuée"},
+      "total_water_saving": {"name": "Eau totale économisée"},
+      "total_events": {"name": "Cycles d'arrosage"},
       "last_zone": {"name": "Dernière zone arrosée"},
       "last_run_water": {"name": "Eau du dernier cycle"},
       "last_run_saving": {"name": "Eau économisée au dernier cycle"},
@@ -81,9 +85,14 @@
     },
     "binary_sensor": {
       "online": {"name": "En ligne"},
+      "rain_sensing": {"name": "Détection de pluie active"},
       "watering": {"name": "Arrosage"},
       "session_conflict": {"name": "Conflit de session"},
       "last_run_fault": {"name": "Défaut du dernier cycle"}
+    },
+    "number": {
+      "watering_depth": {"name": "Profondeur d'arrosage"},
+      "watering_duration": {"name": "Durée d'arrosage"}
     },
     "select": {
       "nozzle_type": {"name": "Type de buse"},

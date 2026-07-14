@@ -56,9 +56,12 @@
       "head_angle": {"name": "Kopfwinkel"},
       "spray_distance": {"name": "Wurfweite"},
       "firmware": {"name": "Firmware-Version"},
-      "water_today": {"name": "Wasserverbrauch heute"},
-      "water_week": {"name": "Wasserverbrauch diese Woche"},
-      "water_month": {"name": "Wasserverbrauch diesen Monat"},
+      "firmware_mcu": {"name": "MCU-Firmware"},
+      "firmware_valve": {"name": "Ventil-Firmware"},
+      "wifi_rssi": {"name": "WLAN-Signal"},
+      "total_water_yield": {"name": "Wasser gesamt"},
+      "total_water_saving": {"name": "Wasser gespart gesamt"},
+      "total_events": {"name": "Bewässerungsvorgänge"},
       "last_zone": {"name": "Zuletzt bewässerte Zone"},
       "last_run_water": {"name": "Wasser letzter Lauf"},
       "last_run_saving": {"name": "Wasserersparnis letzter Lauf"},
@@ -82,6 +85,7 @@
     },
     "binary_sensor": {
       "online": {"name": "Online"},
+      "rain_sensing": {"name": "Regensensor aktiv"},
       "watering": {"name": "Bewässerung"},
       "session_conflict": {"name": "Sitzungskonflikt"},
       "last_run_fault": {"name": "Störung letzter Lauf"}

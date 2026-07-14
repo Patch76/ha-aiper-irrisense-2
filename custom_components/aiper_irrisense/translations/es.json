@@ -56,9 +56,12 @@
       "head_angle": {"name": "Ángulo del cabezal"},
       "spray_distance": {"name": "Alcance del chorro"},
       "firmware": {"name": "Versión de firmware"},
-      "water_today": {"name": "Consumo de agua hoy"},
-      "water_week": {"name": "Consumo de agua esta semana"},
-      "water_month": {"name": "Consumo de agua este mes"},
+      "firmware_mcu": {"name": "Firmware MCU"},
+      "firmware_valve": {"name": "Firmware de la válvula"},
+      "wifi_rssi": {"name": "Señal wifi"},
+      "total_water_yield": {"name": "Agua total suministrada"},
+      "total_water_saving": {"name": "Agua total ahorrada"},
+      "total_events": {"name": "Eventos de riego"},
       "last_zone": {"name": "Última zona regada"},
       "last_run_water": {"name": "Agua del último ciclo"},
       "last_run_saving": {"name": "Agua ahorrada en el último ciclo"},
@@ -82,6 +85,7 @@
     },
     "binary_sensor": {
       "online": {"name": "En línea"},
+      "rain_sensing": {"name": "Detección de lluvia activa"},
       "watering": {"name": "Riego"},
       "session_conflict": {"name": "Conflicto de sesión"},
       "last_run_fault": {"name": "Fallo del último ciclo"}

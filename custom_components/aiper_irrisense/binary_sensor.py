@@ -44,7 +44,6 @@ class OnlineBinarySensor(IrrisenseEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "online")
-        self._attr_name = "Online"
 
     @property
     def is_on(self) -> bool:
@@ -76,7 +75,6 @@ class SessionConflictBinarySensor(IrrisenseEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "session_conflict")
-        self._attr_name = "Session conflict"
 
     @property
     def is_on(self) -> bool:
@@ -90,7 +88,6 @@ class WateringBinarySensor(IrrisenseEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "watering")
-        self._attr_name = "Watering"
 
     @property
     def is_on(self) -> bool:
@@ -114,7 +111,6 @@ class RainSensingBinarySensor(IrrisenseEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "rain_sensing")
-        self._attr_name = "Rain sensing active"
 
     @property
     def is_on(self) -> bool:
@@ -148,7 +144,6 @@ class LastRunFaultBinarySensor(IrrisenseEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "last_run_fault")
-        self._attr_name = "Last run fault"
 
     @property
     def is_on(self) -> bool | None:

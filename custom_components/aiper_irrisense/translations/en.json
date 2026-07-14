@@ -56,9 +56,12 @@
       "head_angle": {"name": "Head angle"},
       "spray_distance": {"name": "Spray distance"},
       "firmware": {"name": "Firmware version"},
-      "water_today": {"name": "Water usage today"},
-      "water_week": {"name": "Water usage this week"},
-      "water_month": {"name": "Water usage this month"},
+      "firmware_mcu": {"name": "MCU firmware"},
+      "firmware_valve": {"name": "Valve firmware"},
+      "wifi_rssi": {"name": "WiFi signal"},
+      "total_water_yield": {"name": "Total water delivered"},
+      "total_water_saving": {"name": "Total water saved"},
+      "total_events": {"name": "Watering events"},
       "last_zone": {"name": "Last watered zone"},
       "last_run_water": {"name": "Last run water"},
       "last_run_saving": {"name": "Last run water saved"},
@@ -82,6 +85,7 @@
     },
     "binary_sensor": {
       "online": {"name": "Online"},
+      "rain_sensing": {"name": "Rain sensing active"},
       "watering": {"name": "Watering"},
       "session_conflict": {"name": "Session conflict"},
       "last_run_fault": {"name": "Last run fault"}

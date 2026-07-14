@@ -47,6 +47,7 @@
   "entity": {
     "sensor": {
       "active_zone": {"name": "Zona ativa"},
+      "current_dose": {"name": "Dose atual"},
       "active_elapsed": {"name": "Segundos decorridos"},
       "active_total": {"name": "Duração total do ciclo (segundos)"},
       "active_progress": {"name": "Progresso"},
@@ -84,6 +85,10 @@
       "watering": {"name": "Rega"},
       "session_conflict": {"name": "Conflito de sessão"},
       "last_run_fault": {"name": "Falha do último ciclo"}
+    },
+    "number": {
+      "watering_depth": {"name": "Profundidade de rega"},
+      "watering_duration": {"name": "Duração da rega"}
     },
     "select": {
       "nozzle_type": {"name": "Tipo de bico"},

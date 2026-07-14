@@ -47,6 +47,7 @@
   "entity": {
     "sensor": {
       "active_zone": {"name": "Actieve zone"},
+      "current_dose": {"name": "Huidige dosis"},
       "active_elapsed": {"name": "Verstreken seconden"},
       "active_total": {"name": "Totale cyclusduur (seconden)"},
       "active_progress": {"name": "Voortgang"},
@@ -84,6 +85,10 @@
       "watering": {"name": "Besproeiing"},
       "session_conflict": {"name": "Sessieconflict"},
       "last_run_fault": {"name": "Storing laatste cyclus"}
+    },
+    "number": {
+      "watering_depth": {"name": "Besproeiingsdiepte"},
+      "watering_duration": {"name": "Besproeiingsduur"}
     },
     "select": {
       "nozzle_type": {"name": "Sproeiertype"},

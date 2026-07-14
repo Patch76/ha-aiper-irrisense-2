@@ -47,6 +47,7 @@
   "entity": {
     "sensor": {
       "active_zone": {"name": "Zona attiva"},
+      "current_dose": {"name": "Dose attuale"},
       "active_elapsed": {"name": "Secondi trascorsi"},
       "active_total": {"name": "Durata totale ciclo (secondi)"},
       "active_progress": {"name": "Avanzamento"},
@@ -84,6 +85,10 @@
       "watering": {"name": "Irrigazione"},
       "session_conflict": {"name": "Conflitto di sessione"},
       "last_run_fault": {"name": "Guasto ultimo ciclo"}
+    },
+    "number": {
+      "watering_depth": {"name": "Profondità di irrigazione"},
+      "watering_duration": {"name": "Durata irrigazione"}
     },
     "select": {
       "nozzle_type": {"name": "Tipo di ugello"},

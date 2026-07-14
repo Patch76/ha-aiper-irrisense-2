@@ -47,6 +47,7 @@
   "entity": {
     "sensor": {
       "active_zone": {"name": "Zone active"},
+      "current_dose": {"name": "Dose actuelle"},
       "active_elapsed": {"name": "Secondes écoulées"},
       "active_total": {"name": "Durée totale du cycle (secondes)"},
       "active_progress": {"name": "Progression"},
@@ -84,6 +85,10 @@
       "watering": {"name": "Arrosage"},
       "session_conflict": {"name": "Conflit de session"},
       "last_run_fault": {"name": "Défaut du dernier cycle"}
+    },
+    "number": {
+      "watering_depth": {"name": "Profondeur d'arrosage"},
+      "watering_duration": {"name": "Durée d'arrosage"}
     },
     "select": {
       "nozzle_type": {"name": "Type de buse"},

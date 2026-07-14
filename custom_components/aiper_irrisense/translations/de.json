@@ -47,6 +47,7 @@
   "entity": {
     "sensor": {
       "active_zone": {"name": "Aktive Zone"},
+      "current_dose": {"name": "Aktuelle Dosis"},
       "active_elapsed": {"name": "Vergangene Sekunden"},
       "active_total": {"name": "Laufdauer gesamt (Sekunden)"},
       "active_progress": {"name": "Fortschritt"},
@@ -84,6 +85,10 @@
       "watering": {"name": "Bewässerung"},
       "session_conflict": {"name": "Sitzungskonflikt"},
       "last_run_fault": {"name": "Störung letzter Lauf"}
+    },
+    "number": {
+      "watering_depth": {"name": "Bewässerungstiefe"},
+      "watering_duration": {"name": "Bewässerungsdauer"}
     },
     "select": {
       "nozzle_type": {"name": "Düsentyp"},

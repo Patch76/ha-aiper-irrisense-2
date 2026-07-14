@@ -51,16 +51,38 @@
       "active_total": {"name": "Run total seconds"},
       "active_progress": {"name": "Progress"},
       "active_repair_layer": {"name": "Coverage passes"},
+      "remaining_time": {"name": "Remaining time"},
+      "head_angle": {"name": "Head angle"},
       "firmware": {"name": "Firmware version"},
       "water_today": {"name": "Water usage today"},
       "water_week": {"name": "Water usage this week"},
       "water_month": {"name": "Water usage this month"},
-      "last_zone": {"name": "Last watered zone"}
+      "last_zone": {"name": "Last watered zone"},
+      "last_run_water": {"name": "Last run water"},
+      "last_run_saving": {"name": "Last run water saved"},
+      "last_run_duration": {"name": "Last run duration"},
+      "last_run_status": {
+        "name": "Last run status",
+        "state": {
+          "completed": "Completed",
+          "fault": "Fault",
+          "weather_wind": "Skipped – wind",
+          "weather_rain": "Skipped – rain forecast",
+          "on_rain": "Skipped – raining",
+          "overlap": "Skipped – overlap",
+          "manual_stop": "Stopped manually",
+          "water_shortage": "Stopped – no water",
+          "manual_task": "Skipped – manual task",
+          "conflict": "Skipped – conflict",
+          "un_completed": "Incomplete"
+        }
+      }
     },
     "binary_sensor": {
       "online": {"name": "Online"},
       "watering": {"name": "Watering"},
-      "session_conflict": {"name": "Session conflict"}
+      "session_conflict": {"name": "Session conflict"},
+      "last_run_fault": {"name": "Last run fault"}
     },
     "select": {
       "nozzle_type": {"name": "Nozzle type"},

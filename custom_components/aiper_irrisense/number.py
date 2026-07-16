@@ -5,14 +5,27 @@ adjustable numbers: the rain amount and the wind speed above which the device
 defers a scheduled run. Both write back through ``updateWateringSetting`` (full
 setting object merged by the coordinator).
 
-The device reports these as bare floats; the app's own unit for each is not
-surfaced on the API, so the entities are left unitless and mirror the value
-shown in the app rather than asserting an unverified unit.
+Wire units (the raw float the device stores) are fixed regardless of the user's
+locale; the Aiper app converts them for display:
+
+* ``rainAmount``  -> **inches** (app gauge 0.1-1.0 in), shown as mm for metric
+  users. Cross-checked against a real device: raw 0.5 renders as ~13 mm.
+* ``windSpeed``   -> **metres/second** (app slider 2.2-20.1 m/s), shown as km/h
+  or mph. Cross-checked: raw 8.2 renders as ~30 km/h (8.2 * 3.6 = 29.5).
+
+So each entity declares its native unit and a matching device class; Home
+Assistant then converts to the viewer's unit system automatically, and
+``async_set_native_value`` always receives (and writes) the native wire value.
 """
 from __future__ import annotations
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import (
+    NumberDeviceClass,
+    NumberEntity,
+    NumberMode,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfPrecipitationDepth, UnitOfSpeed
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -65,27 +78,29 @@ class RainThresholdNumber(_SettingNumber):
     """Rain amount above which a scheduled run is skipped (``rainAmount``)."""
 
     _setting_key = "rainAmount"
-    _attr_native_min_value = 0.0
-    _attr_native_max_value = 25.0
+    _attr_device_class = NumberDeviceClass.PRECIPITATION
+    _attr_native_unit_of_measurement = UnitOfPrecipitationDepth.INCHES
+    _attr_native_min_value = 0.1
+    _attr_native_max_value = 1.0
     _attr_native_step = 0.1
     _attr_icon = "mdi:weather-rainy"
     _attr_translation_key = "rain_threshold"
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "rain_threshold")
-        self._attr_name = "Rain threshold"
 
 
 class WindThresholdNumber(_SettingNumber):
     """Wind speed above which a scheduled run is skipped (``windSpeed``)."""
 
     _setting_key = "windSpeed"
-    _attr_native_min_value = 0.0
-    _attr_native_max_value = 50.0
-    _attr_native_step = 0.5
+    _attr_device_class = NumberDeviceClass.WIND_SPEED
+    _attr_native_unit_of_measurement = UnitOfSpeed.METERS_PER_SECOND
+    _attr_native_min_value = 2.2
+    _attr_native_max_value = 20.1
+    _attr_native_step = 0.1
     _attr_icon = "mdi:weather-windy"
     _attr_translation_key = "wind_threshold"
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "wind_threshold")
-        self._attr_name = "Wind threshold"

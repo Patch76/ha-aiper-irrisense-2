@@ -209,7 +209,13 @@ def _find_map_id(obj: Any) -> int | None:
 class IrrisenseApi:
     """REST + MQTT client for the Aiper Irrisense 2."""
 
-    def __init__(self, username: str, password: str, region: str = "eu") -> None:
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        region: str = "eu",
+        cache_dir: str | None = None,
+    ) -> None:
         self.username = username
         self.password = password
         self.region = region
@@ -246,13 +252,18 @@ class IrrisenseApi:
         # Device cache
         self._devices: dict[str, dict] = {}
         self._device_zone_id_by_sn: dict[str, str] = {}
-        # --- resilience patch: persist device list so a 402 on
-        #     getEquipment at startup/reload doesn't leave entities
-        #     unavailable; reuse the on-disk list instead. ---
-        self._devices_cache_file = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "aiper_devices_cache.json")
-        self._load_devices_cache()
+        # Persist the device list so a 402 on getEquipment at startup/reload
+        # doesn't leave entities unavailable — reuse the on-disk list instead.
+        # The file lives under HA's .storage dir (cache_dir); the cache is
+        # disabled (None) when no dir is given, e.g. the config-flow probe.
+        # Loaded lazily on first get_devices() (which runs in an executor) so
+        # __init__ never blocks the event loop with file I/O.
+        self._devices_cache_file: str | None = (
+            os.path.join(cache_dir, "aiper_irrisense_devices.json")
+            if cache_dir
+            else None
+        )
+        self._devices_cache_loaded = False
 
         # MQTT subscription callbacks
         self._shadow_callbacks: dict[str, list[Callable]] = {}
@@ -555,6 +566,8 @@ class IrrisenseApi:
     # ------------------------------------------------------------------ #
 
     def _load_devices_cache(self) -> None:
+        if not self._devices_cache_file:
+            return
         try:
             with open(self._devices_cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -569,6 +582,8 @@ class IrrisenseApi:
             _LOGGER.warning("Could not load device cache: %s", err)
 
     def _save_devices_cache(self) -> None:
+        if not self._devices_cache_file:
+            return
         try:
             with open(self._devices_cache_file, "w", encoding="utf-8") as f:
                 json.dump({"devices": self._devices,
@@ -577,7 +592,18 @@ class IrrisenseApi:
             _LOGGER.warning("Could not save device cache: %s", err)
 
     def get_devices(self) -> list[dict]:
-        """List all devices on the account and filter for Irrisense units."""
+        """List all devices on the account and filter for Irrisense units.
+
+        Runs in an executor (never on the event loop), so the one-time cache
+        load here is safe. On a successful response the cache is rebuilt to
+        match the account exactly — a removed device disappears and a genuine
+        empty result returns ``[]``. The persisted list is only used as a
+        fallback when the call fails (e.g. HTTP 402 session conflict) or raises.
+        """
+        # Lazy one-time load — keeps blocking file I/O out of __init__.
+        if not self._devices_cache_loaded:
+            self._load_devices_cache()
+            self._devices_cache_loaded = True
         try:
             payload = self._call_encrypted("POST", "/equipment/getEquipment", {})
             if not self._is_success(payload):
@@ -588,25 +614,24 @@ class IrrisenseApi:
             if isinstance(devices, dict):
                 devices = devices.get("list", devices.get("equipments", []))
 
+            # Success → rebuild from the response so removals propagate.
+            fresh: dict[str, dict] = {}
             out: list[dict] = []
             for device in devices:
                 sn = device.get("sn")
                 if not sn:
                     continue
-                # Filter: only Irrisense serials (WRX / WGX prefix). Leave other
-                # aiper devices to the sibling ha-aiper integration.
+                # Filter: only Irrisense serials (WR/WG/WC/WL family). Leave
+                # other aiper devices to the sibling ha-aiper integration.
                 if not sn.upper().startswith(IRRISENSE_SERIAL_PREFIXES):
                     continue
-                self._devices[sn] = device
+                fresh[sn] = device
                 zid = device.get("zoneId") or device.get("zone_id")
                 if isinstance(zid, str) and zid:
                     self._device_zone_id_by_sn[sn] = zid
                 out.append(device)
-            if out:
-                self._save_devices_cache()
-                return out
-            if self._devices:
-                return list(self._devices.values())
+            self._devices = fresh
+            self._save_devices_cache()
             return out
         except Exception as err:
             _LOGGER.error("Failed to get devices: %s — using cached list (%d)", err, len(self._devices))

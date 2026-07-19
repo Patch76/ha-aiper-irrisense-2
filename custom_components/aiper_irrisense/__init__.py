@@ -91,6 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
         region=entry.data.get(CONF_REGION, "eu"),
+        cache_dir=hass.config.path(".storage"),
     )
     api.mqtt_debug = bool(entry.options.get(CONF_MQTT_DEBUG, False))
 

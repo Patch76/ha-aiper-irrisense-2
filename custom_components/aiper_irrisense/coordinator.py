@@ -175,6 +175,10 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._last_experimental_fetch: dict[str, float] = {}
         # Map-document id per SN, resolved once (stable) for pesticide usage.
         self._map_id: dict[str, int] = {}
+        # Device-list re-discovery throttle (see _async_update_data): only
+        # re-fetch getEquipment every ~10 min so an intermittent 402 doesn't
+        # churn the whole entity set.
+        self._last_devlist_refresh: float = 0.0
 
         # User's current Dashboard selection (controls card).
         # Populated by the ZoneSelect / DoseSelect entities; read by the
@@ -313,7 +317,7 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # doesn't drop all entities (get_devices falls back to its
             # on-disk cache on 402).
             _now = time.time()
-            if (_now - getattr(self, "_last_devlist_refresh", 0.0)) > 600:
+            if (_now - self._last_devlist_refresh) > 600:
                 self._last_devlist_refresh = _now
                 await self.hass.async_add_executor_job(self.api.get_devices)
 

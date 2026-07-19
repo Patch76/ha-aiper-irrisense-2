@@ -89,7 +89,6 @@ class ActiveZoneSensor(IrrisenseEntity, SensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "active_zone")
-        self._attr_name = "Active zone"
 
     @property
     def native_value(self) -> str | None:
@@ -206,7 +205,6 @@ class ActiveElapsedSensor(_ActiveMetricBase):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "active_elapsed")
-        self._attr_name = "Elapsed seconds"
 
     @property
     def native_value(self) -> int | None:
@@ -233,7 +231,6 @@ class ActiveTotalSensor(_ActiveMetricBase):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "active_total")
-        self._attr_name = "Run total seconds"
 
     @property
     def native_value(self) -> int | None:
@@ -262,7 +259,6 @@ class ActiveProgressSensor(_ActiveMetricBase):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "active_progress")
-        self._attr_name = "Progress"
 
     @property
     def native_value(self) -> float | None:
@@ -307,7 +303,6 @@ class ActiveRepairLayerSensor(_ActiveMetricBase):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "active_repair_layer")
-        self._attr_name = "Coverage passes"
 
     @property
     def native_value(self) -> int | None:
@@ -451,7 +446,6 @@ class FirmwareSensor(_FirmwareBase):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "firmware")
-        self._attr_name = "Firmware version"
 
 
 class McuFirmwareSensor(_FirmwareBase):
@@ -460,7 +454,6 @@ class McuFirmwareSensor(_FirmwareBase):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "firmware_mcu")
-        self._attr_name = "MCU firmware"
 
 
 class ValveFirmwareSensor(_FirmwareBase):
@@ -469,7 +462,6 @@ class ValveFirmwareSensor(_FirmwareBase):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "firmware_valve")
-        self._attr_name = "Valve firmware"
 
 
 # --------------------------------------------------------------------------- #
@@ -486,7 +478,6 @@ class WifiRssiSensor(IrrisenseEntity, SensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "wifi_rssi")
-        self._attr_name = "WiFi signal"
 
     @property
     def native_value(self) -> int | None:
@@ -519,7 +510,6 @@ class TotalWaterYieldSensor(IrrisenseEntity, SensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "total_water_yield")
-        self._attr_name = "Total water delivered"
 
     @property
     def native_value(self) -> float | None:
@@ -540,7 +530,6 @@ class TotalWaterSavingSensor(IrrisenseEntity, SensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "total_water_saving")
-        self._attr_name = "Total water saved"
 
     @property
     def native_value(self) -> float | None:
@@ -560,7 +549,6 @@ class TotalWateringEventsSensor(IrrisenseEntity, SensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "total_events")
-        self._attr_name = "Watering events"
 
     @property
     def native_value(self) -> int | None:
@@ -578,7 +566,6 @@ class LastWateringZoneSensor(IrrisenseEntity, SensorEntity):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "last_zone")
-        self._attr_name = "Last watered zone"
 
     @property
     def native_value(self) -> str | None:

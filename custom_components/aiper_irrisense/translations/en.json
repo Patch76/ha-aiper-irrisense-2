@@ -39,7 +39,8 @@
           "map_refresh_hours": "Zone-map refresh interval (hours)",
           "history_refresh_hours": "History / stats refresh (hours)",
           "reminder_refresh_hours": "Nozzle / reminder refresh (hours)",
-          "weather_refresh_hours": "Weather refresh (hours)"
+          "weather_refresh_hours": "Weather refresh (hours)",
+          "enable_experimental_sensors": "Enable experimental sensors (pesticide usage, skip history)"
         }
       }
     }
@@ -76,7 +77,9 @@
           "conflict": "Skipped – conflict",
           "un_completed": "Incomplete"
         }
-      }
+      },
+      "last_skip": {"name": "Last skip reason"},
+      "pesticide_usage": {"name": "Pesticide usage zones"}
     },
     "binary_sensor": {
       "online": {"name": "Online"},

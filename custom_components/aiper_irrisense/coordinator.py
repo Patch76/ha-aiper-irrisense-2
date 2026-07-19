@@ -32,6 +32,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import IrrisenseApi
 from .const import (
+    CONF_ENABLE_EXPERIMENTAL_SENSORS,
     CONF_HISTORY_REFRESH_HOURS,
     CONF_MAP_REFRESH_HOURS,
     CONF_POLL_INTERVAL,
@@ -171,6 +172,9 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # One entity per device reads its own SN; the fetch dedups by coordinate
         # so identical coords (all devices at HA home today) cost ONE API call.
         self._weather: dict[str, dict[str, Any]] = {}
+        self._last_experimental_fetch: dict[str, float] = {}
+        # Map-document id per SN, resolved once (stable) for pesticide usage.
+        self._map_id: dict[str, int] = {}
 
         # User's current Dashboard selection (controls card).
         # Populated by the ZoneSelect / DoseSelect entities; read by the
@@ -221,6 +225,10 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._history_refresh = int(opts.get(CONF_HISTORY_REFRESH_HOURS, DEFAULT_HISTORY_REFRESH_HOURS)) * 3600
         self._reminder_refresh = int(opts.get(CONF_REMINDER_REFRESH_HOURS, DEFAULT_REMINDER_REFRESH_HOURS)) * 3600
         self._weather_refresh = int(opts.get(CONF_WEATHER_REFRESH_HOURS, DEFAULT_WEATHER_REFRESH_HOURS)) * 3600
+        # Opt-in experimental sensors (pesticide usage, skip history). Off by
+        # default; the entry reloads on options change, so toggling this
+        # creates/removes the entities on the next reload.
+        self._experimental = bool(opts.get(CONF_ENABLE_EXPERIMENTAL_SENSORS, False))
 
     # ------------------------------------------------------------------ #
     # Public helpers
@@ -386,6 +394,25 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self.api.get_reminder_setting, sn
             )
             self._last_reminder_fetch[sn] = now
+
+        # Experimental (opt-in): pesticide usage + skip history, on the
+        # history cadence. Both come back empty on devices with no cartridge
+        # bound / no skipped runs, and each call returns None on error, so
+        # this never breaks the main poll.
+        if self._experimental and now - self._last_experimental_fetch.get(sn, 0) > self._history_refresh:
+            slot["skip"] = await self.hass.async_add_executor_job(
+                self.api.get_skip_history, sn
+            )
+            map_id = self._map_id.get(sn)
+            if map_id is None:
+                map_id = await self.hass.async_add_executor_job(self.api.get_map_id, sn)
+                if map_id is not None:
+                    self._map_id[sn] = map_id
+            if map_id is not None:
+                slot["pesticide"] = await self.hass.async_add_executor_job(
+                    self.api.get_map_pesticide_usage, sn, map_id
+                )
+            self._last_experimental_fetch[sn] = now
 
     # ------------------------------------------------------------------ #
     # MQTT integration

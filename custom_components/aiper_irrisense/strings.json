@@ -94,6 +94,12 @@
     "button": {
       "start_watering": {"name": "Start watering"},
       "stop_watering": {"name": "Stop watering"}
+    },
+    "number": {
+      "watering_depth": {"name": "Watering depth"},
+      "watering_duration": {"name": "Watering duration"},
+      "rain_threshold": {"name": "Rain threshold"},
+      "wind_threshold": {"name": "Wind threshold"}
     }
   },
   "services": {

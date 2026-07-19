@@ -60,6 +60,9 @@
       "online": {"name": "Online"},
       "watering": {"name": "Watering"}
     },
+    "image": {
+      "zone_map": {"name": "Zone map"}
+    },
     "select": {
       "nozzle_type": {"name": "Nozzle type"},
       "watering_zone": {"name": "Watering zone"},

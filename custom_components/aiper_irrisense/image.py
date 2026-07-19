@@ -42,7 +42,7 @@ class ZoneMapImage(IrrisenseEntity, ImageEntity):
     """SVG map of the device's watering zones with live run overlay."""
 
     _attr_content_type = "image/svg+xml"
-    _attr_name = "Zone map"
+    _attr_translation_key = "zone_map"
 
     def __init__(
         self, hass: HomeAssistant, coordinator: IrrisenseCoordinator, sn: str

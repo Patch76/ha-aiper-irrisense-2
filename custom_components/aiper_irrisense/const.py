@@ -42,6 +42,9 @@ CONF_POLL_INTERVAL: Final = "poll_interval"
 CONF_MAP_REFRESH_HOURS: Final = "map_refresh_hours"
 CONF_HISTORY_REFRESH_HOURS: Final = "history_refresh_hours"
 CONF_REMINDER_REFRESH_HOURS: Final = "reminder_refresh_hours"
+CONF_WEATHER_REFRESH_HOURS: Final = "weather_refresh_hours"
+CONF_ENABLE_WEATHER: Final = "enable_weather"
+CONF_ENABLE_EXPERIMENTAL_SENSORS: Final = "enable_experimental_sensors"
 
 DEFAULT_SCAN_INTERVAL: Final = 120  # seconds
 DEFAULT_FAST_SCAN_INTERVAL: Final = 5  # seconds during an active watering event
@@ -49,6 +52,10 @@ DEFAULT_FAST_WINDOW_SECONDS: Final = 60
 DEFAULT_MAP_REFRESH_HOURS: Final = 6
 DEFAULT_HISTORY_REFRESH_HOURS: Final = 6
 DEFAULT_REMINDER_REFRESH_HOURS: Final = 24
+DEFAULT_WEATHER_REFRESH_HOURS: Final = 1
+# Weather is opt-in: enabling it sends HA's home latitude/longitude to Aiper's
+# cloud on every refresh, so it defaults OFF.
+DEFAULT_ENABLE_WEATHER: Final = False
 
 # ---- MQTT topic patterns --------------------------------------------------
 # Same AWS IoT infrastructure as the pool cleaner integration — the Irrisense

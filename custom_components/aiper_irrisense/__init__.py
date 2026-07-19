@@ -10,14 +10,21 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+    Unauthorized,
+)
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from .api import IrrisenseApi
 from .const import (
     CONF_ENABLE_MQTT,
+    CONF_ENABLE_WEATHER,
     CONF_MQTT_DEBUG,
     CONF_REGION,
+    DEFAULT_ENABLE_WEATHER,
     DOMAIN,
 )
 from .coordinator import IrrisenseCoordinator
@@ -30,7 +37,21 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.SELECT,
     Platform.BUTTON,
+    Platform.IMAGE,
 ]
+
+
+def _platforms_for(entry: ConfigEntry) -> list[Platform]:
+    """Platforms to set up for this entry.
+
+    Weather is opt-in (it sends HA home coordinates to Aiper's cloud), so the
+    WEATHER platform is only forwarded when the option is enabled. The entry
+    reloads on options change, so setup and unload always see the same set.
+    """
+    platforms = list(PLATFORMS)
+    if entry.options.get(CONF_ENABLE_WEATHER, DEFAULT_ENABLE_WEATHER):
+        platforms.append(Platform.WEATHER)
+    return platforms
 # Dose lives on the Watering Dose select (label-valued: "3 mm" / "5 min" / ...)
 # and backend mapping happens in button.StartWateringButton.
 
@@ -89,6 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
         region=entry.data.get(CONF_REGION, "eu"),
+        cache_dir=hass.config.path(".storage"),
     )
     api.mqtt_debug = bool(entry.options.get(CONF_MQTT_DEBUG, False))
 
@@ -187,12 +209,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
     }
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, _platforms_for(entry))
 
     # Reload on options change
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
-    _register_services(hass)
+    _register_services(hass, enable_debug_publish=api.mqtt_debug)
     return True
 
 
@@ -238,7 +260,7 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Tear down an account."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, _platforms_for(entry))
     slot = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if slot:
         api: IrrisenseApi = slot["api"]
@@ -256,9 +278,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 # ---------------------------------------------------------------------- #
 
 
-def _register_services(hass: HomeAssistant) -> None:
-    if hass.services.has_service(DOMAIN, SERVICE_START_ZONE):
-        return
+def _register_services(hass: HomeAssistant, enable_debug_publish: bool = False) -> None:
 
     def _find_coordinator(sn: str) -> IrrisenseCoordinator | None:
         for slot in hass.data.get(DOMAIN, {}).values():
@@ -299,23 +319,49 @@ def _register_services(hass: HomeAssistant) -> None:
         await hass.async_add_executor_job(coord.api.query_work_info, sn)
 
     async def _svc_debug_publish(call: ServiceCall) -> None:
-        """Diagnostic: publish arbitrary bytes to an arbitrary MQTT topic on
-        the device's MQTT connection. Used to experiment with payload shapes
-        while reverse-engineering setWorkMode acceptance.
+        """Diagnostic: publish a payload to a device's MQTT command channel.
+
+        This rides the account's authenticated AWS IoT connection, so it is
+        locked down three ways: the service is only registered when MQTT debug
+        logging is enabled (see `enable_debug_publish`); the caller must be an
+        admin; and the topic must be scoped to the named device's own tree
+        (`aiper/things/<sn>/…`) so it can't be aimed at other devices or the
+        account's shadow topics.
         """
+        # Admin-only: a user-context call must resolve to an admin. Context-less
+        # internal calls (trusted automations/scripts) are allowed through.
+        if call.context.user_id is not None:
+            user = await hass.auth.async_get_user(call.context.user_id)
+            if user is None or not user.is_admin:
+                raise Unauthorized(context=call.context)
+
         sn = call.data[ATTR_SN]
         coord = _find_coordinator(sn)
         if not coord:
             _LOGGER.error("debug_publish: unknown SN %s", sn)
             return
+
+        topic = call.data[ATTR_TOPIC]
+        allowed_prefix = f"aiper/things/{sn}/"
+        if not topic.startswith(allowed_prefix):
+            raise HomeAssistantError(
+                f"debug_publish: topic must start with '{allowed_prefix}' "
+                f"(the named device's own channel); refusing '{topic}'."
+            )
+
         await hass.async_add_executor_job(
             coord.api.debug_publish,
-            call.data[ATTR_TOPIC],
+            topic,
             call.data[ATTR_PAYLOAD],
             int(call.data.get(ATTR_QOS, 1)),
         )
 
-    hass.services.async_register(DOMAIN, SERVICE_START_ZONE, _svc_start_zone, schema=START_ZONE_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_STOP_ZONE, _svc_stop_zone, schema=STOP_ZONE_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_QUERY_WORK_INFO, _svc_query_work, schema=QUERY_WORK_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_DEBUG_PUBLISH, _svc_debug_publish, schema=DEBUG_PUBLISH_SCHEMA)
+    if not hass.services.has_service(DOMAIN, SERVICE_START_ZONE):
+        hass.services.async_register(DOMAIN, SERVICE_START_ZONE, _svc_start_zone, schema=START_ZONE_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_STOP_ZONE, _svc_stop_zone, schema=STOP_ZONE_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_QUERY_WORK_INFO, _svc_query_work, schema=QUERY_WORK_SCHEMA)
+
+    # debug_publish is a diagnostic power tool — only expose it when the
+    # operator has turned on MQTT debug logging on at least one entry.
+    if enable_debug_publish and not hass.services.has_service(DOMAIN, SERVICE_DEBUG_PUBLISH):
+        hass.services.async_register(DOMAIN, SERVICE_DEBUG_PUBLISH, _svc_debug_publish, schema=DEBUG_PUBLISH_SCHEMA)

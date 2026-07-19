@@ -14,17 +14,22 @@ from homeassistant.exceptions import HomeAssistantError
 
 from .api import IrrisenseApi
 from .const import (
+    CONF_ENABLE_EXPERIMENTAL_SENSORS,
     CONF_ENABLE_MQTT,
+    CONF_ENABLE_WEATHER,
     CONF_HISTORY_REFRESH_HOURS,
     CONF_MAP_REFRESH_HOURS,
     CONF_MQTT_DEBUG,
     CONF_POLL_INTERVAL,
     CONF_REGION,
     CONF_REMINDER_REFRESH_HOURS,
+    CONF_WEATHER_REFRESH_HOURS,
+    DEFAULT_ENABLE_WEATHER,
     DEFAULT_HISTORY_REFRESH_HOURS,
     DEFAULT_MAP_REFRESH_HOURS,
     DEFAULT_REMINDER_REFRESH_HOURS,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_WEATHER_REFRESH_HOURS,
     DOMAIN,
 )
 
@@ -177,6 +182,18 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_REMINDER_REFRESH_HOURS,
                     default=current.get(CONF_REMINDER_REFRESH_HOURS, DEFAULT_REMINDER_REFRESH_HOURS),
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=168)),
+                vol.Optional(
+                    CONF_ENABLE_WEATHER,
+                    default=current.get(CONF_ENABLE_WEATHER, DEFAULT_ENABLE_WEATHER),
+                ): bool,
+                vol.Optional(
+                    CONF_WEATHER_REFRESH_HOURS,
+                    default=current.get(CONF_WEATHER_REFRESH_HOURS, DEFAULT_WEATHER_REFRESH_HOURS),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=168)),
+                vol.Optional(
+                    CONF_ENABLE_EXPERIMENTAL_SENSORS,
+                    default=current.get(CONF_ENABLE_EXPERIMENTAL_SENSORS, False),
+                ): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

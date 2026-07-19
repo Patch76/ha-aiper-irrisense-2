@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import logging
 import random
 import threading
@@ -22,6 +23,7 @@ import time
 import weakref
 from collections import defaultdict
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 import aiohttp
 import requests
@@ -149,17 +151,42 @@ def _ensure_global_excepthook_installed() -> None:
         _GLOBAL_HOOK_INSTALLED = True
 
 
+# Zone-map URLs come back from Aiper's cloud and are fetched server-side, so
+# constrain them: HTTPS only (no cleartext MITM), and the host must be Aiper's
+# API or its S3 buckets — never an arbitrary or internal address. This blocks
+# a hostile/compromised cloud response from steering the fetch at, e.g., a
+# link-local metadata endpoint or a LAN target (SSRF).
+_ALLOWED_MAP_HOST_SUFFIXES = (".aiper.com", ".amazonaws.com")
+
+
+def _is_allowed_map_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower()
+    return any(
+        host == suffix.lstrip(".") or host.endswith(suffix)
+        for suffix in _ALLOWED_MAP_HOST_SUFFIXES
+    )
+
+
 def _find_map_url(obj: Any) -> str | None:
-    """Recursively scan a dict/list for the first http(s) URL value."""
+    """Recursively scan a dict/list for the first allowed zone-map URL.
+
+    Only ``https://`` URLs on an allowlisted host (see
+    :data:`_ALLOWED_MAP_HOST_SUFFIXES`) are accepted; anything else is skipped
+    so the recursion keeps looking rather than returning an unsafe URL.
+    """
     if isinstance(obj, str):
-        if obj.startswith("http://") or obj.startswith("https://"):
-            return obj
-        return None
+        return obj if _is_allowed_map_url(obj) else None
     if isinstance(obj, dict):
         # Prefer common URL keys first
         for key in ("url", "mapUrl", "fileUrl", "downloadUrl", "mapFileUrl"):
             val = obj.get(key)
-            if isinstance(val, str) and (val.startswith("http://") or val.startswith("https://")):
+            if isinstance(val, str) and _is_allowed_map_url(val):
                 return val
         for val in obj.values():
             found = _find_map_url(val)
@@ -174,10 +201,47 @@ def _find_map_url(obj: Any) -> str | None:
     return None
 
 
+def _find_map_id(obj: Any) -> int | None:
+    """Recursively scan a getMapList response for the map-document id.
+
+    Mirrors :func:`_find_map_url`: prefer the explicitly-named keys, then
+    fall back to a bare ``id`` on a map-looking object. Returns the first
+    integer id found, or None.
+    """
+    if isinstance(obj, dict):
+        for key in ("mapId", "map_id"):
+            val = obj.get(key)
+            if isinstance(val, int):
+                return val
+        # A map object that also carries the S3 url is the map document;
+        # its bare `id` is the map id.
+        if "id" in obj and _find_map_url(obj) is not None:
+            val = obj.get("id")
+            if isinstance(val, int):
+                return val
+        for val in obj.values():
+            found = _find_map_id(val)
+            if found is not None:
+                return found
+        return None
+    if isinstance(obj, list):
+        for item in obj:
+            found = _find_map_id(item)
+            if found is not None:
+                return found
+    return None
+
+
 class IrrisenseApi:
     """REST + MQTT client for the Aiper Irrisense 2."""
 
-    def __init__(self, username: str, password: str, region: str = "eu") -> None:
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        region: str = "eu",
+        cache_dir: str | None = None,
+    ) -> None:
         self.username = username
         self.password = password
         self.region = region
@@ -214,6 +278,18 @@ class IrrisenseApi:
         # Device cache
         self._devices: dict[str, dict] = {}
         self._device_zone_id_by_sn: dict[str, str] = {}
+        # Persist the device list so a 402 on getEquipment at startup/reload
+        # doesn't leave entities unavailable — reuse the on-disk list instead.
+        # The file lives under HA's .storage dir (cache_dir); the cache is
+        # disabled (None) when no dir is given, e.g. the config-flow probe.
+        # Loaded lazily on first get_devices() (which runs in an executor) so
+        # __init__ never blocks the event loop with file I/O.
+        self._devices_cache_file: str | None = (
+            os.path.join(cache_dir, "aiper_irrisense_devices.json")
+            if cache_dir
+            else None
+        )
+        self._devices_cache_loaded = False
 
         # MQTT subscription callbacks
         self._shadow_callbacks: dict[str, list[Callable]] = {}
@@ -355,8 +431,11 @@ class IrrisenseApi:
         try:
             payload = json.loads(decrypted)
         except Exception as err:
+            # Don't echo the decrypted body — for /login it can contain the
+            # session token. The length is enough to diagnose a parse failure.
             raise Exception(
-                f"Failed to parse decrypted response from {path}: {decrypted[:200]}"
+                f"Failed to parse decrypted response from {path} "
+                f"({len(decrypted)} bytes)"
             ) from err
 
         code = str(payload.get("code"))
@@ -427,7 +506,11 @@ class IrrisenseApi:
             self.base_url = str(domains[0]).rstrip("/")
 
         if not self._token:
-            raise Exception(f"No token in login response: {result}")
+            # Don't dump the response dict — it can carry partial session
+            # material. The key names are enough to tell what came back.
+            raise Exception(
+                f"No token in login response (keys: {sorted(result)})"
+            )
 
         self._session.headers["token"] = self._token
         _LOGGER.info("Irrisense login OK (base_url=%s)", self.base_url)
@@ -505,7 +588,9 @@ class IrrisenseApi:
         out = resp.json()
         creds = out.get("Credentials") or {}
         if not creds.get("AccessKeyId"):
-            _LOGGER.warning("Unexpected Cognito response: %s", out)
+            # Log only the key names — the response can carry an IdentityId or
+            # partial credential material we don't want in the log.
+            _LOGGER.warning("Unexpected Cognito response (keys: %s)", sorted(out))
             return None
         self._aws_credentials = creds
         self._aws_credentials_exp = time.time() + 3300
@@ -515,36 +600,77 @@ class IrrisenseApi:
     # Device discovery / shared endpoints
     # ------------------------------------------------------------------ #
 
+    def _load_devices_cache(self) -> None:
+        if not self._devices_cache_file:
+            return
+        try:
+            with open(self._devices_cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            devs = data.get("devices") or {}
+            if isinstance(devs, dict) and devs:
+                self._devices.update(devs)
+                self._device_zone_id_by_sn.update(data.get("zone_ids") or {})
+                _LOGGER.info("Loaded %d cached Irrisense device(s)", len(devs))
+        except FileNotFoundError:
+            pass
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Could not load device cache: %s", err)
+
+    def _save_devices_cache(self) -> None:
+        if not self._devices_cache_file:
+            return
+        try:
+            with open(self._devices_cache_file, "w", encoding="utf-8") as f:
+                json.dump({"devices": self._devices,
+                           "zone_ids": self._device_zone_id_by_sn}, f)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Could not save device cache: %s", err)
+
     def get_devices(self) -> list[dict]:
-        """List all devices on the account and filter for Irrisense units."""
+        """List all devices on the account and filter for Irrisense units.
+
+        Runs in an executor (never on the event loop), so the one-time cache
+        load here is safe. On a successful response the cache is rebuilt to
+        match the account exactly — a removed device disappears and a genuine
+        empty result returns ``[]``. The persisted list is only used as a
+        fallback when the call fails (e.g. HTTP 402 session conflict) or raises.
+        """
+        # Lazy one-time load — keeps blocking file I/O out of __init__.
+        if not self._devices_cache_loaded:
+            self._load_devices_cache()
+            self._devices_cache_loaded = True
         try:
             payload = self._call_encrypted("POST", "/equipment/getEquipment", {})
             if not self._is_success(payload):
-                _LOGGER.warning("get_devices failed: %s", payload.get("code"))
-                return []
+                _LOGGER.warning("get_devices failed: %s — using cached list (%d)", payload.get("code"), len(self._devices))
+                return list(self._devices.values())
 
             devices = payload.get("data", []) or []
             if isinstance(devices, dict):
                 devices = devices.get("list", devices.get("equipments", []))
 
+            # Success → rebuild from the response so removals propagate.
+            fresh: dict[str, dict] = {}
             out: list[dict] = []
             for device in devices:
                 sn = device.get("sn")
                 if not sn:
                     continue
-                # Filter: only Irrisense serials (WRX / WGX prefix). Leave other
-                # aiper devices to the sibling ha-aiper integration.
+                # Filter: only Irrisense serials (WR/WG/WC/WL family). Leave
+                # other aiper devices to the sibling ha-aiper integration.
                 if not sn.upper().startswith(IRRISENSE_SERIAL_PREFIXES):
                     continue
-                self._devices[sn] = device
+                fresh[sn] = device
                 zid = device.get("zoneId") or device.get("zone_id")
                 if isinstance(zid, str) and zid:
                     self._device_zone_id_by_sn[sn] = zid
                 out.append(device)
+            self._devices = fresh
+            self._save_devices_cache()
             return out
         except Exception as err:
-            _LOGGER.error("Failed to get devices: %s", err)
-            return []
+            _LOGGER.error("Failed to get devices: %s — using cached list (%d)", err, len(self._devices))
+            return list(self._devices.values())
 
     def get_equipment_info(self, sn: str) -> dict | None:
         """Shared `/equipment/getEquipmentInfo` — generic device metadata."""
@@ -630,6 +756,23 @@ class IrrisenseApi:
     def get_watering_setting(self, sn: str) -> dict | None:
         return self._wr("/wr/getWateringSettingV2", {"sn": sn})
 
+    def get_weather(self, latitude: float, longitude: float) -> dict | None:
+        """Apple-WeatherKit-proxied forecast. Read-only. Returns parsed
+        {currentWeather, forecastDaily} or None. data arrives as a JSON string."""
+        from .weather_helpers import parse_weather_payload
+
+        raw = self._wr(
+            "/weatherkit/getWeather",
+            {
+                "dataSets": "currentWeather,forecastDaily",
+                "language": "en",
+                "latitude": float(latitude),
+                "longitude": float(longitude),
+                "reverseGeocodingValue": "",
+            },
+        )
+        return parse_weather_payload(raw)
+
     def get_nozzle_type_setting(self, sn: str) -> dict | None:
         return self._wr("/wr/getNozzleTypeSetting", {"sn": sn})
 
@@ -661,11 +804,27 @@ class IrrisenseApi:
     def get_drainage_reminder(self, sn: str) -> dict | None:
         return self._wr("/wr/getDrainageReminderPopup", {"sn": sn})
 
-    def get_map_pesticide_usage(self, sn: str) -> dict | None:
-        return self._wr("/wr/getMapPesticideUsage", {"sn": sn})
+    def get_map_id(self, sn: str) -> int | None:
+        """Resolve the map-document id from getMapList (needed by
+        getMapPesticideUsage). Separate from the region/zone ids used for
+        watering — this is the id of the whole map document."""
+        return _find_map_id(self.get_map_list(sn))
 
-    def get_skip_history(self, sn: str) -> dict | None:
-        return self._wr("/wr/getWateringTaskSkipRecordHistoryDataV2", {"sn": sn})
+    def get_map_pesticide_usage(self, sn: str, map_id: int) -> dict | None:
+        return self._wr("/wr/getMapPesticideUsage", {"sn": sn, "mapId": map_id})
+
+    def get_skip_history(self, sn: str, days: int = 30) -> dict | None:
+        # Backend wants a time window in whole seconds (start/end); an empty
+        # body returns code=6002. Default to the last `days` days.
+        now_s = int(time.time())
+        return self._wr(
+            "/wr/getWateringTaskSkipRecordHistoryDataV2",
+            {
+                "sn": sn,
+                "startTimestampSecond": now_s - days * 24 * 3600,
+                "endTimestampSecond": now_s,
+            },
+        )
 
     @staticmethod
     def _parse_regions(zmap: dict | None) -> list[dict[str, Any]]:
@@ -869,7 +1028,10 @@ class IrrisenseApi:
             # AttributeError on socket teardown (see the crash shield), and
             # we auto-recover via the thread-excepthook handler below.
             client_id = self._identity_id
-            _LOGGER.info("Irrisense MQTT client_id=%s", client_id)
+            # The client_id is the Cognito identityId (a credential-like
+            # account identifier that diagnostics.py redacts). Keep it at DEBUG
+            # so it doesn't land in default INFO logs users paste into issues.
+            _LOGGER.debug("Irrisense MQTT client_id=%s", client_id)
             self._mqtt_client = AWSIoTMQTTClient(client_id, useWebsocket=True)
             self._mqtt_client.configureEndpoint(self._iot_endpoint, 443)
             self._mqtt_client.configureCredentials(certifi.where())
@@ -1252,7 +1414,13 @@ class IrrisenseApi:
         try:
             with self._cmd_locks[sn]:
                 self._mqtt_client.publish(topic, message, 1)
-            _LOGGER.info("MQTT PUB → %s  (%d bytes)  %s", topic, len(message), message)
+            # The topic embeds the real SN and the message is the full command
+            # frame — only emit it at INFO when the operator opted into MQTT
+            # debug logging (mirrors the inbound-frame gating); otherwise DEBUG.
+            if self.mqtt_debug:
+                _LOGGER.info("MQTT PUB → %s  (%d bytes)  %s", topic, len(message), message)
+            else:
+                _LOGGER.debug("MQTT PUB → %s  (%d bytes)", topic, len(message))
 
             # Record outbound timestamp so the ACK watchdog can detect a
             # silent drop. We intentionally only watch command types that

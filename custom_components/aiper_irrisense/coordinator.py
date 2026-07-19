@@ -32,16 +32,21 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import IrrisenseApi
 from .const import (
+    CONF_ENABLE_EXPERIMENTAL_SENSORS,
+    CONF_ENABLE_WEATHER,
     CONF_HISTORY_REFRESH_HOURS,
     CONF_MAP_REFRESH_HOURS,
     CONF_POLL_INTERVAL,
     CONF_REMINDER_REFRESH_HOURS,
+    CONF_WEATHER_REFRESH_HOURS,
+    DEFAULT_ENABLE_WEATHER,
     DEFAULT_FAST_SCAN_INTERVAL,
     DEFAULT_FAST_WINDOW_SECONDS,
     DEFAULT_HISTORY_REFRESH_HOURS,
     DEFAULT_MAP_REFRESH_HOURS,
     DEFAULT_REMINDER_REFRESH_HOURS,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_WEATHER_REFRESH_HOURS,
     DOMAIN,
     POINT_TIME_LOW,
     POINT_TIME_PRESETS,
@@ -164,6 +169,18 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._last_history_fetch: dict[str, float] = {}
         self._last_reminder_fetch: dict[str, float] = {}
         self._last_settings_fetch: dict[str, float] = {}
+        self._last_weather_fetch: float = 0.0
+        # Per-SN parsed WeatherKit payloads (sn -> {currentWeather, forecastDaily}).
+        # One entity per device reads its own SN; the fetch dedups by coordinate
+        # so identical coords (all devices at HA home today) cost ONE API call.
+        self._weather: dict[str, dict[str, Any]] = {}
+        self._last_experimental_fetch: dict[str, float] = {}
+        # Map-document id per SN, resolved once (stable) for pesticide usage.
+        self._map_id: dict[str, int] = {}
+        # Device-list re-discovery throttle (see _async_update_data): only
+        # re-fetch getEquipment every ~10 min so an intermittent 402 doesn't
+        # churn the whole entity set.
+        self._last_devlist_refresh: float = 0.0
 
         # User's current Dashboard selection (controls card).
         # Populated by the ZoneSelect / DoseSelect entities; read by the
@@ -213,6 +230,14 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._map_refresh = int(opts.get(CONF_MAP_REFRESH_HOURS, DEFAULT_MAP_REFRESH_HOURS)) * 3600
         self._history_refresh = int(opts.get(CONF_HISTORY_REFRESH_HOURS, DEFAULT_HISTORY_REFRESH_HOURS)) * 3600
         self._reminder_refresh = int(opts.get(CONF_REMINDER_REFRESH_HOURS, DEFAULT_REMINDER_REFRESH_HOURS)) * 3600
+        self._weather_refresh = int(opts.get(CONF_WEATHER_REFRESH_HOURS, DEFAULT_WEATHER_REFRESH_HOURS)) * 3600
+        # Weather is opt-in (default OFF): enabling it sends HA home coordinates
+        # to Aiper's cloud each refresh. Gate the fetch on this flag.
+        self._weather_enabled = bool(opts.get(CONF_ENABLE_WEATHER, DEFAULT_ENABLE_WEATHER))
+        # Opt-in experimental sensors (pesticide usage, skip history). Off by
+        # default; the entry reloads on options change, so toggling this
+        # creates/removes the entities on the next reload.
+        self._experimental = bool(opts.get(CONF_ENABLE_EXPERIMENTAL_SENSORS, False))
 
     # ------------------------------------------------------------------ #
     # Public helpers
@@ -222,6 +247,55 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     def devices(self) -> list[dict]:
         """Return the list of discovered Irrisense device dicts."""
         return list(self.api._devices.values())  # noqa: SLF001
+
+    def weather_for(self, sn: str) -> dict[str, Any] | None:
+        """Latest parsed WeatherKit payload for one device, or None."""
+        return self._weather.get(sn)
+
+    def _resolve_coords(self, sn: str) -> tuple[float, float] | None:
+        """Coordinates to fetch weather for `sn`. The single per-device seam.
+
+        Today every device uses HA's home coordinates. Per-device Aiper
+        location can be wired in here later (look up the device's stored
+        lat/lng, fall back to home) without touching the entity layer.
+        """
+        from .weather_helpers import resolve_coords
+
+        return resolve_coords(self.hass.config.latitude, self.hass.config.longitude)
+
+    async def _refresh_weather(self) -> None:
+        """Fetch per-device weather at most every `_weather_refresh`. Fully
+        failure-isolated: any error is swallowed and last-good is kept so
+        watering is never affected by a weather rate-limit. Dedups by
+        coordinate — devices sharing coords cost a single API call."""
+        try:
+            now = time.time()
+            if self._weather and now - self._last_weather_fetch < self._weather_refresh:
+                return
+            # Group devices by their resolved coordinate so identical coords
+            # (all at HA home today) are fetched once and shared.
+            coord_to_sns: dict[tuple[float, float], list[str]] = {}
+            for dev in self.devices:
+                sn = dev.get("sn")
+                if not sn:
+                    continue
+                coords = self._resolve_coords(sn)
+                if coords is None:
+                    continue
+                coord_to_sns.setdefault(coords, []).append(sn)
+            fetched_any = False
+            for coords, sns in coord_to_sns.items():
+                w = await self.hass.async_add_executor_job(
+                    self.api.get_weather, coords[0], coords[1]
+                )
+                if isinstance(w, dict):
+                    for sn in sns:
+                        self._weather[sn] = w
+                    fetched_any = True
+            if fetched_any:
+                self._last_weather_fetch = now
+        except Exception as err:  # noqa: BLE001 - weather must never break the refresh
+            _LOGGER.debug("weather refresh failed (will retry next poll): %s", err)
 
     def get_device_data(self, sn: str) -> dict[str, Any]:
         return self._data.setdefault(sn, {})
@@ -243,9 +317,14 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self.update_interval = self._base_interval
 
         try:
-            # Refresh device list on every pass (cheap; once a day would be
-            # enough, but it also catches new devices being added).
-            await self.hass.async_add_executor_job(self.api.get_devices)
+            # Resilience patch: refresh the device list only every ~10 min
+            # instead of every poll, so an intermittent getEquipment 402
+            # doesn't drop all entities (get_devices falls back to its
+            # on-disk cache on 402).
+            _now = time.time()
+            if (_now - self._last_devlist_refresh) > 600:
+                self._last_devlist_refresh = _now
+                await self.hass.async_add_executor_job(self.api.get_devices)
 
             device_registry = dr.async_get(self.hass)
             for dev in self.devices:
@@ -260,6 +339,11 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     _LOGGER.debug("Skipping disabled device %s in refresh", sn)
                     continue
                 await self._refresh_device(sn, dev)
+
+            # Weather is opt-in — skip the fetch entirely when disabled so no
+            # home coordinates are ever sent to Aiper's cloud.
+            if self._weather_enabled:
+                await self._refresh_weather()
 
             return self._data
         except Exception as err:
@@ -327,6 +411,25 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self.api.get_reminder_setting, sn
             )
             self._last_reminder_fetch[sn] = now
+
+        # Experimental (opt-in): pesticide usage + skip history, on the
+        # history cadence. Both come back empty on devices with no cartridge
+        # bound / no skipped runs, and each call returns None on error, so
+        # this never breaks the main poll.
+        if self._experimental and now - self._last_experimental_fetch.get(sn, 0) > self._history_refresh:
+            slot["skip"] = await self.hass.async_add_executor_job(
+                self.api.get_skip_history, sn
+            )
+            map_id = self._map_id.get(sn)
+            if map_id is None:
+                map_id = await self.hass.async_add_executor_job(self.api.get_map_id, sn)
+                if map_id is not None:
+                    self._map_id[sn] = map_id
+            if map_id is not None:
+                slot["pesticide"] = await self.hass.async_add_executor_job(
+                    self.api.get_map_pesticide_usage, sn, map_id
+                )
+            self._last_experimental_fetch[sn] = now
 
     # ------------------------------------------------------------------ #
     # MQTT integration
@@ -1166,6 +1269,19 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         slot = self._data.get(sn) or {}
         zmap = slot.get("map") or {}
         regions = zmap.get("regions") if isinstance(zmap, dict) else None
+        return regions if isinstance(regions, list) else []
+
+    def zone_geometry_for(self, sn: str) -> list[dict[str, Any]]:
+        """Return the RAW zone-map regions, including per-region ``points[]``.
+
+        ``zones_for`` returns the slimmed regions from ``_parse_regions`` which
+        deliberately drop the geometry; the zone-map image renderer needs the
+        untouched shapes, kept under ``slot["map"]["raw"]``.
+        """
+        slot = self._data.get(sn) or {}
+        zmap = slot.get("map") or {}
+        raw = zmap.get("raw") if isinstance(zmap, dict) else None
+        regions = raw.get("regions") if isinstance(raw, dict) else None
         return regions if isinstance(regions, list) else []
 
     def zone_name(self, sn: str, map_id: int) -> str | None:

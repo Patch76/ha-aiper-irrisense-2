@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — Features, resilience, security hardening
+
+### Added
+
+- **Zone-map image entity** — live SVG of the zone map with the active zone and
+  sprinkler position overlaid (#44 by @Patch76).
+- **Per-run history sensors** — last-run water used / saved, duration, and
+  outcome status; plus remaining-time and head-angle live sensors (#42 by
+  @Patch76).
+- **Session-conflict & last-run-fault binary sensors** for diagnostics (#42/#43
+  by @Patch76).
+- **Weather entity (opt-in, default OFF)** backed by Aiper's WeatherKit
+  endpoint (#32 by @Patch76). Enabling it sends your Home Assistant home
+  latitude/longitude to Aiper's cloud on each refresh, so it is gated behind an
+  **Enable weather** option and documented in the README privacy note.
+- **Experimental pesticide-usage / skip-history sensors (opt-in, default OFF)**
+  behind an **Enable experimental sensors** option (#40 by @Patch76). Request
+  paths are verified; record shapes are best-effort pending real-hardware data.
+- **Cloud protocol overview** doc (#49 by @Patch76).
+
+### Changed
+
+- **Serial matching broadened to the 2-letter Irrisense family** (`WR`, `WG`,
+  `WC`, `WL`) so WCX / WRZ / future batch letters are accepted (#25 by
+  @Patch76; fixes #20, #45).
+- **Writable switches now send full payloads** so rain/wind-sensing and
+  schedule toggles actually apply instead of reverting (#28 by @Patch76;
+  duplicate #37 by @cedbossneo closed; fixes #27).
+- **Setup timeouts raised** (login 30 s, discovery 20 s) so a slow cloud login
+  no longer trips a spurious `ConfigEntryNotReady` (#38 by @cedbossneo).
+- **Zone-map fetch retries after a short backoff** instead of the full refresh
+  interval (#36 by @Patch76).
+- **Device list persisted across restarts** so an intermittent cloud 402
+  doesn't drop all entities; the cache now lives under HA's `.storage`, loads
+  off the event loop, and is rebuilt from each successful response so removed
+  devices disappear (#33 by @tatutsa888, reworked on merge).
+- Unused imports removed; stale `water_pressure_kpa` dashboard chip dropped;
+  integration icon added (#24, #26, #8 by @Patch76 / @CtznSniiips).
+
+### Security
+
+- **`debug_publish` service locked down** — only registered when MQTT debug
+  logging is enabled, requires an admin caller, and the topic must be scoped to
+  the named device (`aiper/things/<sn>/…`).
+- **Token-bearing response bodies scrubbed** from exception messages and the
+  Cognito warning log (they could reach HA logs and the reauth UI).
+- **Zone-map URL fetch restricted** to `https://` on an allowlisted host
+  (`.aiper.com` / `.amazonaws.com`) to prevent a cloud-controlled fetch from
+  being aimed elsewhere.
+- **Log levels aligned with diagnostics redaction** — the Cognito identity id
+  and full command frames no longer log at INFO unless MQTT debug is on.
+
 ## [0.3.0] — Bug fixes, point-zone watchdog, robust setup
 
 ### Added

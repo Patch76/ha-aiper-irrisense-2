@@ -47,6 +47,7 @@
   },
   "entity": {
     "sensor": {
+      "schedules": {"name": "Schema's"},
       "active_zone": {"name": "Actieve zone"},
       "current_dose": {"name": "Huidige dosis"},
       "active_elapsed": {"name": "Verstreken seconden"},
@@ -87,6 +88,7 @@
       }
     },
     "binary_sensor": {
+      "mqtt_connected": {"name": "MQTT verbonden"},
       "online": {"name": "Online"},
       "rain_sensing": {"name": "Regendetectie actief"},
       "watering": {"name": "Besproeiing"},
@@ -106,6 +108,9 @@
       "reminder_pesticide": {"name": "Herinnering gewasbescherming"},
       "reminder_task": {"name": "Herinnering besproeiingstaak"},
       "reminder_water_shortage": {"name": "Herinnering watertekort"}
+    },
+    "image": {
+      "zone_map": {"name": "Zonekaart"}
     },
     "select": {
       "nozzle_type": {"name": "Sproeiertype"},

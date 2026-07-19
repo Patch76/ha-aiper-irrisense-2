@@ -47,6 +47,7 @@
   },
   "entity": {
     "sensor": {
+      "schedules": {"name": "Programações"},
       "active_zone": {"name": "Zona ativa"},
       "current_dose": {"name": "Dose atual"},
       "active_elapsed": {"name": "Segundos decorridos"},
@@ -87,6 +88,7 @@
       }
     },
     "binary_sensor": {
+      "mqtt_connected": {"name": "MQTT ligado"},
       "online": {"name": "Online"},
       "rain_sensing": {"name": "Deteção de chuva ativa"},
       "watering": {"name": "Rega"},
@@ -106,6 +108,9 @@
       "reminder_pesticide": {"name": "Lembrete de fitofármaco"},
       "reminder_task": {"name": "Lembrete de tarefa de rega"},
       "reminder_water_shortage": {"name": "Lembrete de falta de água"}
+    },
+    "image": {
+      "zone_map": {"name": "Mapa de zonas"}
     },
     "select": {
       "nozzle_type": {"name": "Tipo de bico"},

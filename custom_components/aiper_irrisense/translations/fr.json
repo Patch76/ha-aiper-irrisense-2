@@ -47,6 +47,7 @@
   },
   "entity": {
     "sensor": {
+      "schedules": {"name": "Programmes"},
       "active_zone": {"name": "Zone active"},
       "current_dose": {"name": "Dose actuelle"},
       "active_elapsed": {"name": "Secondes écoulées"},
@@ -87,6 +88,7 @@
       }
     },
     "binary_sensor": {
+      "mqtt_connected": {"name": "MQTT connecté"},
       "online": {"name": "En ligne"},
       "rain_sensing": {"name": "Détection de pluie active"},
       "watering": {"name": "Arrosage"},
@@ -106,6 +108,9 @@
       "reminder_pesticide": {"name": "Rappel de produit phytosanitaire"},
       "reminder_task": {"name": "Rappel de tâche d'arrosage"},
       "reminder_water_shortage": {"name": "Rappel de manque d'eau"}
+    },
+    "image": {
+      "zone_map": {"name": "Carte des zones"}
     },
     "select": {
       "nozzle_type": {"name": "Type de buse"},

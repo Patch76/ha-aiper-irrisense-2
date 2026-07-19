@@ -47,6 +47,7 @@
   },
   "entity": {
     "sensor": {
+      "schedules": {"name": "Zeitpläne"},
       "active_zone": {"name": "Aktive Zone"},
       "current_dose": {"name": "Aktuelle Dosis"},
       "active_elapsed": {"name": "Vergangene Sekunden"},
@@ -87,6 +88,7 @@
       }
     },
     "binary_sensor": {
+      "mqtt_connected": {"name": "MQTT verbunden"},
       "online": {"name": "Online"},
       "rain_sensing": {"name": "Regensensor aktiv"},
       "watering": {"name": "Bewässerung"},
@@ -106,6 +108,9 @@
       "reminder_pesticide": {"name": "Erinnerung Pflanzenschutzmittel"},
       "reminder_task": {"name": "Erinnerung Bewässerungsaufgabe"},
       "reminder_water_shortage": {"name": "Erinnerung Wassermangel"}
+    },
+    "image": {
+      "zone_map": {"name": "Zonenkarte"}
     },
     "select": {
       "nozzle_type": {"name": "Düsentyp"},

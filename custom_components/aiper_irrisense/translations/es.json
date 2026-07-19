@@ -47,6 +47,7 @@
   },
   "entity": {
     "sensor": {
+      "schedules": {"name": "Programaciones"},
       "active_zone": {"name": "Zona activa"},
       "current_dose": {"name": "Dosis actual"},
       "active_elapsed": {"name": "Segundos transcurridos"},
@@ -87,6 +88,7 @@
       }
     },
     "binary_sensor": {
+      "mqtt_connected": {"name": "MQTT conectado"},
       "online": {"name": "En línea"},
       "rain_sensing": {"name": "Detección de lluvia activa"},
       "watering": {"name": "Riego"},
@@ -106,6 +108,9 @@
       "reminder_pesticide": {"name": "Recordatorio de fitosanitario"},
       "reminder_task": {"name": "Recordatorio de tarea de riego"},
       "reminder_water_shortage": {"name": "Recordatorio de falta de agua"}
+    },
+    "image": {
+      "zone_map": {"name": "Mapa de zonas"}
     },
     "select": {
       "nozzle_type": {"name": "Tipo de boquilla"},

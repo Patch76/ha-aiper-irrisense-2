@@ -47,6 +47,7 @@
   },
   "entity": {
     "sensor": {
+      "schedules": {"name": "Programmi"},
       "active_zone": {"name": "Zona attiva"},
       "current_dose": {"name": "Dose attuale"},
       "active_elapsed": {"name": "Secondi trascorsi"},
@@ -87,6 +88,7 @@
       }
     },
     "binary_sensor": {
+      "mqtt_connected": {"name": "MQTT connesso"},
       "online": {"name": "Online"},
       "rain_sensing": {"name": "Rilevamento pioggia attivo"},
       "watering": {"name": "Irrigazione"},
@@ -106,6 +108,9 @@
       "reminder_pesticide": {"name": "Promemoria fitofarmaco"},
       "reminder_task": {"name": "Promemoria attività di irrigazione"},
       "reminder_water_shortage": {"name": "Promemoria mancanza d'acqua"}
+    },
+    "image": {
+      "zone_map": {"name": "Mappa delle zone"}
     },
     "select": {
       "nozzle_type": {"name": "Tipo di ugello"},

@@ -563,8 +563,8 @@ class IrrisenseApi:
                 sn = device.get("sn")
                 if not sn:
                     continue
-                # Filter: only Irrisense serials (WRX / WGX prefix). Leave other
-                # aiper devices to the sibling ha-aiper integration.
+                # Filter: only Irrisense serials (WR / WG / WC / WL family).
+                # Leave other aiper devices to the sibling ha-aiper integration.
                 if not sn.upper().startswith(IRRISENSE_SERIAL_PREFIXES):
                     continue
                 self._devices[sn] = device

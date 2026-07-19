@@ -253,13 +253,6 @@ views:
                             backdrop-filter: blur(8px);
                           }
                     - type: template
-                      icon: mdi:gauge
-                      icon_color: cyan
-                      content: |-
-                        {% set p = state_attr('sensor.irrisense_front_lawn_active_zone', 'water_pressure_kpa') | float(0) %}
-                        {{ p | round(0) | int }} kPa
-                      card_mod: *chip_style
-                    - type: template
                       icon: mdi:layers-triple
                       icon_color: cyan
                       content: |-
@@ -1009,13 +1002,6 @@ views:
                             color: #f0fdf4 !important;
                             backdrop-filter: blur(8px);
                           }
-                    - type: template
-                      icon: mdi:gauge
-                      icon_color: green
-                      content: |-
-                        {% set p = state_attr('sensor.irrisense_back_lawn_active_zone', 'water_pressure_kpa') | float(0) %}
-                        {{ p | round(0) | int }} kPa
-                      card_mod: *chip_style_g
                     - type: template
                       icon: mdi:layers-triple
                       icon_color: green

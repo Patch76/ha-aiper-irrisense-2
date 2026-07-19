@@ -282,13 +282,6 @@ views:
                             color: #f0f9ff !important;
                             backdrop-filter: blur(8px);
                           }
-                    - type: template
-                      icon: mdi:gauge
-                      icon_color: cyan
-                      content: |-
-                        {% set p = state_attr('sensor.irrisense_garden_active_zone', 'water_pressure_kpa') | float(0) %}
-                        {{ p | round(0) | int }} kPa
-                      card_mod: *chip_style
                     # PASS chip — shows current coverage pass, 1-indexed
                     # (repair_layer is 0-indexed on the wire). No "of M";
                     # total-pass estimation is unreliable. Dash when not

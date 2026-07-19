@@ -303,13 +303,6 @@ views:
                             color: #f0f9ff !important;
                             backdrop-filter: blur(8px);
                           }
-                    - type: template
-                      icon: mdi:gauge
-                      icon_color: cyan
-                      content: |-
-                        {% set p = state_attr('sensor.irrisense_front_lawn_active_zone', 'water_pressure_kpa') | float(0) %}
-                        {{ p | round(0) | int }} kPa
-                      card_mod: *chip_style
                     # PASS chip — shows current coverage pass, 1-indexed
                     # (repair_layer is 0-indexed on the wire). No "of M";
                     # total-pass estimation is unreliable. Dash when not
@@ -1110,13 +1103,6 @@ views:
                             color: #f0fdf4 !important;
                             backdrop-filter: blur(8px);
                           }
-                    - type: template
-                      icon: mdi:gauge
-                      icon_color: green
-                      content: |-
-                        {% set p = state_attr('sensor.irrisense_back_lawn_active_zone', 'water_pressure_kpa') | float(0) %}
-                        {{ p | round(0) | int }} kPa
-                      card_mod: *chip_style_g
                     # PASS chip — see Front Lawn section for rationale.
                     - type: template
                       icon: mdi:layers-triple

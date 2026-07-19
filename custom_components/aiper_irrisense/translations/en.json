@@ -57,6 +57,7 @@
       "last_zone": {"name": "Last watered zone"}
     },
     "binary_sensor": {
+      "mqtt_connected": {"name": "MQTT connected"},
       "online": {"name": "Online"},
       "watering": {"name": "Watering"}
     },

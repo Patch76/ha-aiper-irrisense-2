@@ -114,7 +114,7 @@ class MqttConnectedBinarySensor(IrrisenseEntity, BinarySensorEntity):
 
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "MQTT connected"
+    _attr_translation_key = "mqtt_connected"
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "mqtt_connected")

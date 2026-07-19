@@ -184,6 +184,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_WEATHER_REFRESH_HOURS,
                     default=current.get(CONF_WEATHER_REFRESH_HOURS, DEFAULT_WEATHER_REFRESH_HOURS),
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=168)),
+                vol.Optional(
                     CONF_ENABLE_EXPERIMENTAL_SENSORS,
                     default=current.get(CONF_ENABLE_EXPERIMENTAL_SENSORS, False),
                 ): bool,

@@ -49,36 +49,18 @@ from homeassistant.util.unit_conversion import (
 )
 
 from .const import DOMAIN
-from .coordinator import IrrisenseCoordinator
-from .entity import IrrisenseEntity
-from .number_grid import snap_to_grid
-"""Number platform: free dose / duration input.
-
-Complements the Dose select. The Aiper app exposes the full slider range —
-depth 0.1..0.9 inch (shown as 3..23 mm) and point time 1..150 minutes — far
-wider than the three presets the Dose select offers. These Number entities
-let the user set any in-range value. The value is written to the same dose
-selection the Dose select and Start button read, so the most recent of the
-two wins.
-"""
-from __future__ import annotations
-
-from homeassistant.components.number import NumberEntity, NumberMode
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength, UnitOfTime
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     DEPTH_MM_MAX,
     DEPTH_MM_MIN,
-    DOMAIN,
     POINT_TIME_MAX,
     POINT_TIME_MIN,
 )
 from .coordinator import IrrisenseCoordinator
 from .entity import IrrisenseEntity
+from .number_grid import snap_to_grid
 
 
 async def async_setup_entry(
@@ -94,6 +76,8 @@ async def async_setup_entry(
             [
                 RainThresholdNumber(coordinator, sn),
                 WindThresholdNumber(coordinator, sn),
+                DepthNumber(coordinator, sn),
+                DurationNumber(coordinator, sn),
             ]
         )
     async_add_entities(entities)
@@ -187,9 +171,6 @@ class WindThresholdNumber(_SettingNumber):
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "wind_threshold")
-        entities.append(DepthNumber(coordinator, sn))
-        entities.append(DurationNumber(coordinator, sn))
-    async_add_entities(entities)
 
 
 class _DoseNumberBase(IrrisenseEntity, RestoreEntity, NumberEntity):

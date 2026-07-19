@@ -32,7 +32,6 @@ PLATFORMS: list[Platform] = [
     Platform.NUMBER,
     Platform.BUTTON,
     Platform.IMAGE,
-    Platform.NUMBER,
     Platform.WEATHER,
 ]
 # Dose lives on the Watering Dose select (label-valued: "3 mm" / "5 min" / ...)

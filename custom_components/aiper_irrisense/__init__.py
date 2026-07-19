@@ -31,6 +31,7 @@ PLATFORMS: list[Platform] = [
     Platform.SELECT,
     Platform.BUTTON,
     Platform.IMAGE,
+    Platform.NUMBER,
 ]
 # Dose lives on the Watering Dose select (label-valued: "3 mm" / "5 min" / ...)
 # and backend mapping happens in button.StartWateringButton.

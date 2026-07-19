@@ -8,6 +8,7 @@ Field names are confirmed from a live diagnostics dump:
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -38,6 +39,8 @@ async def async_setup_entry(
                 ActiveTotalSensor(coordinator, sn),
                 ActiveProgressSensor(coordinator, sn),
                 ActiveRepairLayerSensor(coordinator, sn),
+                RemainingTimeSensor(coordinator, sn),
+                HeadAngleSensor(coordinator, sn),
                 FirmwareSensor(coordinator, sn),
                 McuFirmwareSensor(coordinator, sn),
                 ValveFirmwareSensor(coordinator, sn),
@@ -46,6 +49,10 @@ async def async_setup_entry(
                 TotalWaterSavingSensor(coordinator, sn),
                 TotalWateringEventsSensor(coordinator, sn),
                 LastWateringZoneSensor(coordinator, sn),
+                LastRunWaterSensor(coordinator, sn),
+                LastRunSavingSensor(coordinator, sn),
+                LastRunDurationSensor(coordinator, sn),
+                LastRunStatusSensor(coordinator, sn),
             ]
         )
     async_add_entities(entities)
@@ -283,6 +290,77 @@ class ActiveRepairLayerSensor(_ActiveMetricBase):
         return None
 
 
+class RemainingTimeSensor(_ActiveMetricBase):
+    """Estimated seconds until the current run finishes (``total − elapsed``).
+
+    Reported only once the coordinator has back-solved a real run duration
+    (``duration_pending`` cleared). While the duration is still the 300s
+    placeholder we return None, so a dashboard shows "--:--" instead of
+    counting down a fake five minutes.
+    """
+
+    _attr_icon = "mdi:timer-sand-complete"
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "s"
+    _attr_translation_key = "remaining_time"
+
+    def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
+        super().__init__(coordinator, sn, "remaining_time")
+        self._attr_name = "Remaining time"
+
+    @property
+    def native_value(self) -> int | None:
+        live = self._live()
+        if not live or live.get("duration_pending"):
+            return None
+        total = live.get("duration_seconds")
+        elapsed = live.get("time_sec")
+        if (
+            isinstance(total, (int, float))
+            and isinstance(elapsed, (int, float))
+            and total > 0
+        ):
+            return int(max(0, total - elapsed))
+        return None
+
+
+class HeadAngleSensor(_ActiveMetricBase):
+    """Rotation angle of the sprinkler head, 0..360°.
+
+    The realTimeProgress stream reports the live spray target as Cartesian
+    ``x`` / ``y`` (head at the origin) but no explicit head angle. The angle
+    is recovered as ``(90 − atan2(y, x)) mod 360`` — the same relation the
+    static map's ``rotate`` field (centi-degrees) follows, verified across
+    ~50 map points on two devices.
+
+    Device-relative: 0° is the device's own +Y reference, **not** a compass
+    bearing — the data carries no geographic-North / real-world orientation.
+    """
+
+    _attr_icon = "mdi:angle-acute"
+    _attr_native_unit_of_measurement = "°"
+    _attr_translation_key = "head_angle"
+
+    def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
+        super().__init__(coordinator, sn, "head_angle")
+        self._attr_name = "Head angle"
+
+    @property
+    def native_value(self) -> float | None:
+        live = self._live()
+        if not live:
+            return None
+        x = live.get("x")
+        y = live.get("y")
+        if not (isinstance(x, (int, float)) and isinstance(y, (int, float))):
+            return None
+        if x == 0 and y == 0:
+            return None
+        angle = (90.0 - math.degrees(math.atan2(y, x))) % 360.0
+        return round(angle, 1)
+
+
 # --------------------------------------------------------------------------- #
 # Firmware sensors
 # --------------------------------------------------------------------------- #
@@ -446,18 +524,9 @@ class LastWateringZoneSensor(IrrisenseEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        history = self._slot.get("history")
-        if not isinstance(history, dict):
+        last = self._latest_history_record
+        if last is None:
             return None
-        items = (
-            history.get("list")
-            or history.get("records")
-            or history.get("data")
-            or []
-        )
-        if not (isinstance(items, list) and items and isinstance(items[0], dict)):
-            return None
-        last = items[0]
         region_id = last.get("regionId") or last.get("region_id") or last.get("mapId")
         if region_id is not None:
             try:
@@ -470,15 +539,148 @@ class LastWateringZoneSensor(IrrisenseEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        history = self._slot.get("history")
-        if not isinstance(history, dict):
+        last = self._latest_history_record
+        if last is None:
             return None
-        items = history.get("list") or history.get("records") or history.get("data") or []
-        if isinstance(items, list) and items and isinstance(items[0], dict):
-            last = items[0]
-            return {
-                "start_time": last.get("startTime") or last.get("start_time"),
-                "duration_minutes": last.get("duration") or last.get("estimatedDuration"),
-                "depth_mm": last.get("depth") or last.get("waterYield"),
-            }
+        return {
+            "start_time": last.get("startTime") or last.get("start_time"),
+            "duration_minutes": last.get("duration") or last.get("estimatedDuration"),
+            "depth_mm": last.get("depth") or last.get("waterYield"),
+        }
+
+
+class LastRunWaterSensor(IrrisenseEntity, SensorEntity):
+    """Water delivered during the most recent completed run.
+
+    Read from the newest watering-history record (``newWaterYield``). Unlike the
+    lifetime total this is per-run, so it can drive per-run notifications or a
+    comparison against a physical water meter. The unit follows the lifetime
+    totals' convention (backend reports gallons; HA converts for metric users).
+
+    ``newWaterYield`` is the water the app itself shows per run; the sibling
+    ``usedVolume`` field is the potion/pesticide amount, not water, and reads 0
+    without a cartridge.
+    """
+
+    # No state_class: per-run snapshot, not a measurement stream — HA rejects
+    # `measurement` on device_class `water` (expects total/total_increasing).
+    _attr_device_class = SensorDeviceClass.WATER
+    _attr_native_unit_of_measurement = UnitOfVolume.GALLONS
+    _attr_icon = "mdi:water-sync"
+    _attr_translation_key = "last_run_water"
+
+    def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
+        super().__init__(coordinator, sn, "last_run_water")
+        self._attr_name = "Last run water"
+
+    @property
+    def native_value(self) -> float | None:
+        last = self._latest_history_record
+        if last is None:
+            return None
+        val = last.get("newWaterYield")
+        if isinstance(val, (int, float)):
+            return float(val)
         return None
+
+
+# Outcome of a finished run, as coded on the watering-history record's
+# ``taskStatus`` field. Anything outside this table renders as ``un_completed``.
+TASK_STATUS_LABELS: dict[int, str] = {
+    1: "completed",
+    2: "fault",
+    3: "weather_wind",
+    4: "weather_rain",
+    5: "on_rain",
+    6: "overlap",
+    7: "manual_stop",
+    8: "water_shortage",
+    9: "manual_task",
+    10: "conflict",
+}
+_TASK_STATUS_FALLBACK = "un_completed"
+
+
+class LastRunSavingSensor(IrrisenseEntity, SensorEntity):
+    """Water saved during the most recent run (``waterSavingAmount``).
+
+    Per-run counterpart to the lifetime ``total_water_saving`` total, read from
+    the newest history record. Same unit convention as the other water totals
+    (backend reports gallons; HA converts for metric users).
+    """
+
+    _attr_device_class = SensorDeviceClass.WATER
+    _attr_native_unit_of_measurement = UnitOfVolume.GALLONS
+    _attr_icon = "mdi:water-check"
+    _attr_translation_key = "last_run_saving"
+
+    def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
+        super().__init__(coordinator, sn, "last_run_saving")
+        self._attr_name = "Last run water saved"
+
+    @property
+    def native_value(self) -> float | None:
+        last = self._latest_history_record
+        if last is None:
+            return None
+        val = last.get("waterSavingAmount")
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            return float(val)
+        return None
+
+
+class LastRunDurationSensor(IrrisenseEntity, SensorEntity):
+    """Actual run time of the most recent run (``runTime``, minutes).
+
+    Verified against the record's planned ``duration`` on point zones: a
+    10-minute dose reports ``runTime`` 11, a 1-minute dose reports 2 — i.e.
+    the planned minutes plus ~1 of overhead. Line zones carry no planned
+    ``duration`` but the same ``runTime`` (minutes) still applies.
+    """
+
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = "min"
+    _attr_icon = "mdi:timer-outline"
+    _attr_translation_key = "last_run_duration"
+
+    def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
+        super().__init__(coordinator, sn, "last_run_duration")
+        self._attr_name = "Last run duration"
+
+    @property
+    def native_value(self) -> int | None:
+        last = self._latest_history_record
+        if last is None:
+            return None
+        val = last.get("runTime")
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            return int(val)
+        return None
+
+
+class LastRunStatusSensor(IrrisenseEntity, SensorEntity):
+    """Outcome label of the most recent watering-history record (``taskStatus``).
+
+    Surfaces why the last run ended — ``completed``, ``manual_stop``, a
+    weather skip, or ``fault`` — so the reason is available to automations
+    without polling the app.
+    """
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = list(TASK_STATUS_LABELS.values()) + [_TASK_STATUS_FALLBACK]
+    _attr_icon = "mdi:clipboard-check-outline"
+    _attr_translation_key = "last_run_status"
+
+    def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
+        super().__init__(coordinator, sn, "last_run_status")
+        self._attr_name = "Last run status"
+
+    @property
+    def native_value(self) -> str | None:
+        last = self._latest_history_record
+        if last is None:
+            return None
+        val = last.get("taskStatus")
+        if not isinstance(val, int) or isinstance(val, bool):
+            return None
+        return TASK_STATUS_LABELS.get(val, _TASK_STATUS_FALLBACK)

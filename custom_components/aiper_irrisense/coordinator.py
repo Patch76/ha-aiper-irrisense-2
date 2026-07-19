@@ -31,6 +31,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import IrrisenseApi
+from .schedule import parse_overview
 from .const import (
     CONF_HISTORY_REFRESH_HOURS,
     CONF_MAP_REFRESH_HOURS,
@@ -328,6 +329,29 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
             self._last_reminder_fetch[sn] = now
 
+        # Watering plans (schedules) are device-resident and only reachable
+        # over the MQTT command channel — not REST. Fire the overview + a
+        # detail query per known plan each poll; responses resolve in
+        # `handle_mqtt_message` (eventual consistency).
+        await self._query_plans(sn, slot)
+
+    async def _query_plans(self, sn: str, slot: dict[str, Any]) -> None:
+        """Publish `WrPlanOverview` + a `WrPlanDetail` per known plan id.
+
+        Fire-and-forget over MQTT. The overview discovers which slots are in
+        use; the per-id details fill in on the next cycle. No-op when MQTT is
+        down (avoids log spam; retried next poll).
+        """
+        if not self.api.is_mqtt_connected():
+            return
+        await self.hass.async_add_executor_job(
+            self.api._publish_cmd, sn, "WrPlanOverview", {}  # noqa: SLF001
+        )
+        for pid in list(slot.get("plan_ids", [])):
+            await self.hass.async_add_executor_job(
+                self.api._publish_cmd, sn, "WrPlanDetail", {"plan_id": pid}  # noqa: SLF001
+            )
+
     # ------------------------------------------------------------------ #
     # MQTT integration
     # ------------------------------------------------------------------ #
@@ -402,6 +426,22 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "_ts": time.time(),
                 }
                 mqtt_slot[f"up_{cmd_base}"] = normalised
+                # Watering-plan (schedule) responses need per-plan accumulation
+                # instead of the single-slot `up_<cmd>` stash: WrPlanDetail
+                # arrives once per plan and would otherwise overwrite itself.
+                if cmd_base == "WrPlanOverview":
+                    ids = parse_overview(body or {})
+                    slot["plan_ids"] = ids
+                    plans = slot.setdefault("plans", {})
+                    for stale in [p for p in plans if p not in ids]:
+                        plans.pop(stale, None)
+                elif cmd_base == "WrPlanDetail":
+                    try:
+                        pid = int((body or {}).get("plan_id"))
+                    except (TypeError, ValueError):
+                        pid = None
+                    if pid is not None:
+                        slot.setdefault("plans", {})[pid] = body
                 # Clear the ACK watchdog whenever the device echoes a
                 # command type we were waiting on.
                 try:

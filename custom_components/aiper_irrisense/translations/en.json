@@ -84,6 +84,7 @@
       "pesticide_usage": {"name": "Pesticide usage zones"}
     },
     "binary_sensor": {
+      "mqtt_connected": {"name": "MQTT connected"},
       "online": {"name": "Online"},
       "watering": {"name": "Watering"},
       "session_conflict": {"name": "Session conflict"},

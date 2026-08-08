@@ -73,6 +73,13 @@ _LOGGER = logging.getLogger(__name__)
 # initiated disconnects don't re-enter the recovery path.
 # --------------------------------------------------------------------------- #
 
+# Delay before each crash-shield reconnect attempt; the last value repeats for
+# every further attempt. The recovery keeps retrying until it succeeds or the
+# entry is unloaded — a failed attempt used to leave realtime MQTT dead until
+# the next HA restart, because nothing else in the integration ever calls
+# `connect_mqtt()` again.
+_CRASH_SHIELD_BACKOFF_SECONDS = (5, 15, 60, 180, 300)
+
 _GLOBAL_HOOK_LOCK = threading.Lock()
 _GLOBAL_HOOK_INSTALLED = False
 _LIVE_API_INSTANCES: "weakref.WeakSet[IrrisenseApi]" = weakref.WeakSet()
@@ -98,16 +105,26 @@ def _irrisense_excepthook_dispatcher(prior_hook):
                 and "'NoneType'" in str(exc)
             )
             if is_paho or is_socket_teardown:
-                # Dispatch to exactly ONE live instance. Prefer the one with
-                # a currently-owned client; fall back to any live instance
-                # that's mid-recovery; otherwise ignore (it's a ghost crash
-                # from an instance that's already gone).
+                # Dispatch to exactly ONE live instance. Prefer the instance
+                # that actually owns the dying thread — with two config
+                # entries, "first instance holding a client" attributes the
+                # crash to the wrong account, so the healthy one tears its
+                # client down while the crashed one stays zombied. Fall back
+                # to the old heuristics if the thread can't be matched (SDK
+                # internals moved), then to any instance that's mid-recovery;
+                # otherwise ignore (it's a ghost crash from an instance that's
+                # already gone).
                 target: IrrisenseApi | None = None
                 candidates = list(_LIVE_API_INSTANCES)
                 for inst in candidates:
-                    if inst._mqtt_client is not None:
+                    if inst._owns_loop_thread(thread):
                         target = inst
                         break
+                if target is None:
+                    for inst in candidates:
+                        if inst._mqtt_client is not None:
+                            target = inst
+                            break
                 if target is None:
                     for inst in candidates:
                         if inst._reconnecting:
@@ -316,6 +333,9 @@ class IrrisenseApi:
         # called `old.disconnect()` during crash-shield recovery.
         # Each expected death is swallowed without starting another worker.
         self._expected_paho_deaths: int = 0
+        # Set by `disconnect()` so the crash-shield retry loop stops sleeping
+        # and never resurrects a client after the config entry is unloaded.
+        self._shutdown = threading.Event()
 
         # Register this instance so the module-level excepthook dispatcher
         # can find us. WeakSet auto-cleans after HA reload drops the ref.
@@ -997,6 +1017,9 @@ class IrrisenseApi:
     # ------------------------------------------------------------------ #
 
     def connect_mqtt(self) -> bool:
+        if self._shutdown.is_set():
+            _LOGGER.debug("Skipping MQTT connect — API is shutting down")
+            return False
         if not self._identity_id or not self._iot_endpoint:
             _LOGGER.error("No IoT identity/endpoint available")
             return False
@@ -1134,6 +1157,83 @@ class IrrisenseApi:
         self._thread_excepthook_installed = True
         _ensure_global_excepthook_installed()
 
+    def _paho_client(self, client: Any = None) -> Any:
+        """Reach the SDK's paho client behind an ``AWSIoTMQTTClient``.
+
+        Private SDK path, so every caller has to tolerate it moving.
+        """
+        target = self._mqtt_client if client is None else client
+        try:
+            return target._mqtt_core._internal_async_client._paho_client
+        except AttributeError:
+            return None
+
+    def _owns_loop_thread(self, thread: threading.Thread | None) -> bool:
+        """True when `thread` is the paho loop thread of our current client."""
+        if thread is None:
+            return False
+        paho = self._paho_client()
+        return paho is not None and getattr(paho, "_thread", None) is thread
+
+    def _force_close_mqtt_client(self, client: Any) -> None:
+        """Tear down an ``AWSIoTMQTTClient``, including a crashed one.
+
+        `AWSIoTMQTTClient.disconnect()` only releases the SDK's internals once
+        a DISCONNECT event has travelled back through the paho network thread.
+        When that thread is dead — which is exactly the case the crash shield
+        exists for — the call cannot succeed: it either raises immediately
+        (`MQTT_ERR_NO_CONN`) or blocks for the whole configured disconnect
+        timeout and then raises. Either way the SDK's `EventConsumer` is never
+        stopped, and its dispatch thread keeps waking every 10 ms
+        (`MAX_DISPATCH_INTERNAL_SEC`) for the lifetime of the process, holding
+        the client and its sockets alive with it. One leaked thread per
+        recovery cycle is enough to make a busy account cost noticeable CPU
+        after a day or two.
+
+        So: only attempt a graceful disconnect while the loop thread can still
+        deliver it, and stop the event consumer directly whenever that
+        disconnect didn't happen or didn't work.
+        """
+        paho = self._paho_client(client)
+        loop_thread = getattr(paho, "_thread", None) if paho is not None else None
+
+        if loop_thread is not None and loop_thread.is_alive():
+            # Our own disconnect can make the loop thread's `socket().pending()`
+            # raise as it unwinds. Pre-register ONE expected death so the
+            # excepthook swallows it instead of starting a second worker.
+            with self._lock:
+                self._expected_paho_deaths += 1
+            # Trim the disconnect timeout: 30 s of blocking buys nothing on a
+            # client we are throwing away.
+            try:
+                client.configureConnectDisconnectTimeout(5)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                client.disconnect()
+                # A successful disconnect already waited for the event
+                # consumer to stop, so there's nothing left to force.
+                return
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "MQTT disconnect failed (%s) — forcing teardown.", err
+                )
+
+        try:
+            consumer = client._mqtt_core._event_consumer
+        except AttributeError:
+            _LOGGER.debug(
+                "Could not reach the SDK event consumer; skipping forced "
+                "teardown (AWSIoTPythonSDK internals changed?)."
+            )
+            return
+        try:
+            if consumer.is_running():
+                consumer.stop()
+                consumer.wait_until_it_stops(5)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Could not stop the MQTT event consumer: %s", err)
+
     def _handle_paho_thread_death(self, exc: BaseException | None) -> None:
         """Single entry point called by the module-level excepthook.
 
@@ -1188,49 +1288,48 @@ class IrrisenseApi:
 
         def _worker() -> None:
             try:
-                # Short backoff — enough for the evicting peer's CONNECT
-                # to settle so we don't immediately trip again.
-                time.sleep(5.0)
-                # Drop the old client reference; its internals are now
-                # in an inconsistent state (dead thread, possibly stale
-                # sockets). A fresh AWSIoTMQTTClient is cheap.
-                old = None
-                try:
-                    old = self._mqtt_client
-                    self._mqtt_client = None
-                except Exception:  # noqa: BLE001
-                    pass
+                attempt = 0
+                while True:
+                    # Wait before (re)connecting: long enough for the evicting
+                    # peer's CONNECT to settle so we don't immediately trip
+                    # again, and growing on repeated failure so a cloud outage
+                    # doesn't turn into a login storm. Interruptible so an
+                    # unload doesn't have to wait the delay out.
+                    delay = _CRASH_SHIELD_BACKOFF_SECONDS[
+                        min(attempt, len(_CRASH_SHIELD_BACKOFF_SECONDS) - 1)
+                    ]
+                    if self._shutdown.wait(delay):
+                        return
 
-                if old is not None:
-                    # Our own disconnect will cause the old paho thread's
-                    # `socket().pending()` to raise AttributeError as it
-                    # unwinds. Pre-register ONE expected death so the
-                    # excepthook swallows it instead of spawning _worker_B.
-                    with self._lock:
-                        self._expected_paho_deaths += 1
-                    # Trim the disconnect timeout on the old client — it's
-                    # already dead, waiting 30 s just blocks us from
-                    # recreating. 5 s is plenty for a best-effort tear-down.
+                    # Drop the old client reference; its internals are now
+                    # in an inconsistent state (dead thread, possibly stale
+                    # sockets). A fresh AWSIoTMQTTClient is cheap.
+                    old = None
                     try:
-                        if hasattr(old, "configureConnectDisconnectTimeout"):
-                            old.configureConnectDisconnectTimeout(5)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    try:
-                        old.disconnect()
+                        old = self._mqtt_client
+                        self._mqtt_client = None
                     except Exception:  # noqa: BLE001
                         pass
 
-                _LOGGER.info("Crash-shield: recreating MQTT client...")
-                ok = self.connect_mqtt()
-                if not ok:
+                    if old is not None:
+                        self._force_close_mqtt_client(old)
+
+                    _LOGGER.info("Crash-shield: recreating MQTT client...")
+                    if self.connect_mqtt():
+                        # connect_mqtt() sets _mqtt_connected via onOnline,
+                        # which also replays subscriptions; nothing more to do.
+                        return
+
+                    attempt += 1
+                    next_delay = _CRASH_SHIELD_BACKOFF_SECONDS[
+                        min(attempt, len(_CRASH_SHIELD_BACKOFF_SECONDS) - 1)
+                    ]
                     _LOGGER.warning(
-                        "Crash-shield: reconnect attempt failed; will retry "
-                        "on next publish or scheduled poll."
+                        "Crash-shield: reconnect attempt %d failed; retrying "
+                        "in %d s. REST polling is unaffected.",
+                        attempt,
+                        next_delay,
                     )
-                    return
-                # connect_mqtt() sets _mqtt_connected via onOnline which also
-                # replays subscriptions; nothing more to do here.
             finally:
                 # Give the old paho thread a moment to finish dying so any
                 # straggler AttributeError gets absorbed by the expected-
@@ -1584,12 +1683,16 @@ class IrrisenseApi:
     # ------------------------------------------------------------------ #
 
     def disconnect(self) -> None:
-        if self._mqtt_client and self._mqtt_connected:
-            try:
-                self._mqtt_client.disconnect()
-            except Exception:
-                pass
-            self._mqtt_connected = False
+        # Stop any in-flight crash-shield retry first, so it can't recreate a
+        # client behind an unloading config entry.
+        self._shutdown.set()
+        client, self._mqtt_client = self._mqtt_client, None
+        self._mqtt_connected = False
+        if client is not None:
+            # Unconditional: after an eviction `_mqtt_connected` is already
+            # False while the SDK's threads and sockets are very much alive,
+            # so gating the teardown on it leaked a client per reload.
+            self._force_close_mqtt_client(client)
         try:
             self._session.close()
         except Exception:

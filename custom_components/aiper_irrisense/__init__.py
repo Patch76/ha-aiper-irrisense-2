@@ -287,6 +287,32 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow deleting a device the account no longer reports.
+
+    Devices the user disabled in HA are filtered out during setup, so a
+    controller that has since left the Aiper account keeps its registry
+    entry forever with no way to delete it. Decide against the
+    coordinator's unfiltered device list: the filtered one would report
+    every disabled device as gone and allow removing devices that are
+    still on the account.
+    """
+    slot = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if slot is None:
+        # Entry never finished setup - nothing left to protect.
+        return True
+    coordinator: IrrisenseCoordinator = slot["coordinator"]
+    known = {d.get("sn") for d in coordinator.devices if d.get("sn")}
+    return not any(
+        domain == DOMAIN and value in known
+        for domain, value in device_entry.identifiers
+    )
+
+
 # ---------------------------------------------------------------------- #
 # Services
 # ---------------------------------------------------------------------- #

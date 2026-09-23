@@ -15,11 +15,12 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfLength, UnitOfVolume
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_ENABLE_EXPERIMENTAL_SENSORS, DOMAIN
-from .coordinator import IrrisenseCoordinator
+from .coordinator import SIGNAL_SELECTION_CHANGED, IrrisenseCoordinator
 from .entity import IrrisenseEntity
 from .geometry import spray_reach_m
 from .schedule import dose_label, parse_plan_detail, weekday_abbr
@@ -159,8 +160,10 @@ class ActiveZoneSensor(IrrisenseEntity, SensorEntity):
 class CurrentDoseSensor(IrrisenseEntity, SensorEntity):
     """The dose / duration the next Start will use.
 
-    Mirrors the shared dose selection last written by the Dose select or the
-    depth / duration Number entities, as a label like "13 mm" or "120 min".
+    Shows the coordinator's effective dose: the pick last written by the Dose
+    select or the depth / duration Number entities while it fits the selected
+    zone, else that zone type's default, as a label like "13 mm" or "120 min".
+    Updates as soon as the zone or dose selection changes, not on the next poll.
     """
 
     _attr_icon = "mdi:water-percent"
@@ -172,6 +175,19 @@ class CurrentDoseSensor(IrrisenseEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         return self.coordinator.get_dose_selection(self._sn)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, SIGNAL_SELECTION_CHANGED, self._on_selection_changed
+            )
+        )
+
+    @callback
+    def _on_selection_changed(self, sn: str) -> None:
+        if sn == self._sn:
+            self.async_write_ha_state()
 
 
 # --------------------------------------------------------------------------- #

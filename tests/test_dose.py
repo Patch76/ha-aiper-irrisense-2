@@ -47,3 +47,53 @@ def test_garbage_is_none():
     assert const.parse_dose_label("mm") is None
     assert const.parse_dose_label("5 mmm") is None
     assert const.parse_dose_label("min") is None
+
+
+AREA, LINE, POINT = const.REGION_TYPE_AREA, const.REGION_TYPE_LINE, const.REGION_TYPE_POINT
+
+
+@pytest.mark.parametrize("label", ["3 mm", "13 mm", "18 mm"])
+def test_depth_fits_area_and_line_only(label):
+    assert const.dose_fits_region_type(label, AREA)
+    assert const.dose_fits_region_type(label, LINE)
+    assert not const.dose_fits_region_type(label, POINT)
+
+
+@pytest.mark.parametrize("label", ["1 min", "10 min", "120 min"])
+def test_duration_fits_point_only(label):
+    assert const.dose_fits_region_type(label, POINT)
+    assert not const.dose_fits_region_type(label, AREA)
+    assert not const.dose_fits_region_type(label, LINE)
+
+
+@pytest.mark.parametrize("label", [None, "", "banana", "5 minutes"])
+def test_garbage_fits_nothing(label):
+    for rtype in (AREA, LINE, POINT):
+        assert not const.dose_fits_region_type(label, rtype)
+
+
+def test_label_amount():
+    assert const.dose_label_amount("18 mm") == 18.0
+    assert const.dose_label_amount("120 min") == 120.0
+    assert const.dose_label_amount("3 mm") == 3.0
+    assert const.dose_label_amount("banana") is None
+    assert const.dose_label_amount(None) is None
+
+
+def test_options_add_a_fitting_free_value():
+    assert const.dose_options_for_region_type(AREA, "18 mm") == [
+        "3 mm", "6 mm", "13 mm", "18 mm",
+    ]
+    assert const.dose_options_for_region_type(POINT, "120 min") == [
+        "1 min", "5 min", "10 min", "120 min",
+    ]
+
+
+def test_options_ignore_presets_and_values_of_the_wrong_kind():
+    presets_mm = ["3 mm", "6 mm", "13 mm"]
+    assert const.dose_options_for_region_type(AREA, "6 mm") == presets_mm
+    assert const.dose_options_for_region_type(AREA, "120 min") == presets_mm
+    assert const.dose_options_for_region_type(POINT, "18 mm") == [
+        "1 min", "5 min", "10 min",
+    ]
+    assert const.dose_options_for_region_type(AREA) == presets_mm

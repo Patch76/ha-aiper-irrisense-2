@@ -69,9 +69,8 @@ class StartWateringButton(IrrisenseEntity, ButtonEntity):
             return
 
         # Resolve dose label → wire value. parse_dose_label returns either
-        # ("waterYield", float) or ("point_time", int). If the user never
-        # touched the dose select and it's still the type default, we still
-        # get a valid label from the coordinator.
+        # ("waterYield", float) or ("point_time", int). The coordinator
+        # returns a label that fits the selected zone, or the type default.
         label = self.coordinator.get_dose_selection(self._sn)
         water_yield: float | None = None
         point_time: int | None = None
@@ -84,11 +83,9 @@ class StartWateringButton(IrrisenseEntity, ButtonEntity):
                 elif kind == "point_time":
                     point_time = int(value)
 
-        # Guardrail: if the selected zone is a Point but the user's stored
-        # dose label is still a mm value (or vice versa), let
-        # async_start_zone fall back to the zone-map default by passing
-        # both as None. This covers the race where the user picks a new
-        # zone but RestoreEntity hasn't kicked in yet.
+        # Defensive: never send a dose field the zone type does not take. The
+        # coordinator already returns a fitting label; if that ever breaks,
+        # async_start_zone falls back to the zone-map default instead.
         region = self.coordinator._region_for(self._sn, zone_id)  # noqa: SLF001
         if region is not None:
             rtype = int(region.get("type", 0))

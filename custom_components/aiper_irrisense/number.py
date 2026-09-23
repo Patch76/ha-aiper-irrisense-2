@@ -5,10 +5,13 @@ Two groups of entities live here:
 **Free dose / duration input** (`DepthNumber`, `DurationNumber`).
 Complements the Dose select. The Aiper app exposes the full slider range —
 depth 0.1..0.9 inch (shown as 3..23 mm) and point time 1..150 minutes — far
-wider than the three presets the Dose select offers. These Number entities
-let the user set any in-range value. The value is written to the same dose
-selection the Dose select and Start button read, so the most recent of the
-two wins.
+wider than the three presets the Dose select lists. These Number entities
+let the user set any in-range value. They hold no value of their own: each
+shows the dose selection the Dose select and Start button read, and writing
+one replaces that selection. A value of the wrong kind for the selected zone
+(a duration while an Area zone is selected) is refused, because Start could
+not send it. The entity whose kind does not match the current dose shows no
+value.
 
 **Weather-skip thresholds** (`RainThresholdNumber`, `WindThresholdNumber`).
 Exposes the two weather-skip thresholds from the watering-setting slot as
@@ -56,9 +59,10 @@ from homeassistant.const import (
     UnitOfSpeed,
     UnitOfTime,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.unit_conversion import (
     BaseUnitConverter,
     DistanceConverter,
@@ -71,8 +75,12 @@ from .const import (
     DOMAIN,
     POINT_TIME_MAX,
     POINT_TIME_MIN,
+    REGION_TYPE_AREA,
+    REGION_TYPE_POINT,
+    dose_fits_region_type,
+    dose_label_amount,
 )
-from .coordinator import IrrisenseCoordinator
+from .coordinator import SIGNAL_SELECTION_CHANGED, IrrisenseCoordinator
 from .entity import IrrisenseEntity
 from .number_grid import snap_to_grid
 
@@ -97,39 +105,44 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class _DoseNumberBase(IrrisenseEntity, RestoreEntity, NumberEntity):
-    """Free dose/duration input that feeds the shared dose selection.
+class _DoseNumberBase(IrrisenseEntity, NumberEntity):
+    """Free dose/duration input that shows and sets the shared dose selection.
 
-    Holds its own last-entered value (restored across restarts). Writing it
-    also updates the coordinator's dose selection as a label the Start button
-    parses, so the Number and the Dose select share one 'what will Start use'
-    value on a last-writer-wins basis.
+    The coordinator's dose selection is the only state: this entity shows it
+    when it is of this entity's kind and shows no value otherwise. It is not
+    restored on its own; the Dose select restores the selection.
     """
 
     _attr_mode = NumberMode.BOX
     _attr_native_step = 1
-
-    def __init__(self, coordinator: IrrisenseCoordinator, sn: str, key: str) -> None:
-        super().__init__(coordinator, sn, key)
-        self._value: float | None = None
+    # A representative zone type for this entity's dose kind (Line shares
+    # Area's kind), and the error raised on a zone of the other kind.
+    _region_type: int
+    _wrong_zone_message: str
 
     @property
     def native_value(self) -> float | None:
-        return self._value
+        label = self.coordinator.get_dose_selection(self._sn)
+        if not dose_fits_region_type(label, self._region_type):
+            return None
+        return dose_label_amount(label)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        last = await self.async_get_last_state()
-        if last and last.state not in (None, "unknown", "unavailable"):
-            try:
-                self._value = float(last.state)
-            except (TypeError, ValueError):
-                self._value = None
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, SIGNAL_SELECTION_CHANGED, self._on_selection_changed
+            )
+        )
+
+    @callback
+    def _on_selection_changed(self, sn: str) -> None:
+        if sn == self._sn:
+            self.async_write_ha_state()
 
     async def async_set_native_value(self, value: float) -> None:
-        self._value = value
-        self.coordinator.set_dose_selection(self._sn, self._label_for(value))
-        self.async_write_ha_state()
+        if not self.coordinator.set_dose_selection(self._sn, self._label_for(value)):
+            raise ServiceValidationError(self._wrong_zone_message)
 
     def _label_for(self, value: float) -> str:
         raise NotImplementedError
@@ -143,6 +156,11 @@ class DepthNumber(_DoseNumberBase):
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_native_min_value = float(DEPTH_MM_MIN)
     _attr_native_max_value = float(DEPTH_MM_MAX)
+    _region_type = REGION_TYPE_AREA
+    _wrong_zone_message = (
+        "The watering depth applies to area and line zones only; "
+        "select one of those zones first"
+    )
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "watering_depth")
@@ -159,6 +177,11 @@ class DurationNumber(_DoseNumberBase):
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_native_min_value = float(POINT_TIME_MIN)
     _attr_native_max_value = float(POINT_TIME_MAX)
+    _region_type = REGION_TYPE_POINT
+    _wrong_zone_message = (
+        "The watering duration applies to point zones only; "
+        "select a point zone first"
+    )
 
     def __init__(self, coordinator: IrrisenseCoordinator, sn: str) -> None:
         super().__init__(coordinator, sn, "watering_duration")

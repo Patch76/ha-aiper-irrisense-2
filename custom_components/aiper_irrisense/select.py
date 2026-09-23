@@ -11,10 +11,10 @@ Three selects per device:
   zone's type:
     * Area / Line → "Dose",     options ``3 mm / 6 mm / 13 mm``
     * Point       → "Duration", options ``1 min / 5 min / 10 min``
-  The swap happens via :data:`SIGNAL_SELECTION_CHANGED` — the Zone select
-  fires it on every pick, the Dose select listens and rewrites
-  ``_attr_options`` / ``_attr_name`` / ``_attr_icon`` before calling
-  ``async_write_ha_state``.
+  plus the current value when it was set freely through a Number entity.
+  Options are derived from the coordinator on every read; the name and
+  icon swap via :data:`SIGNAL_SELECTION_CHANGED`, which the coordinator
+  fires on every zone or dose change.
 """
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ from .const import (
     NOZZLE_SERVER_TO_DEVICE,
     NOZZLE_TYPE_LABELS,
     REGION_TYPE_POINT,
-    default_dose_label_for_region_type,
     dose_options_for_region_type,
 )
 from .coordinator import (
@@ -216,8 +215,7 @@ class DoseSelect(IrrisenseEntity, SelectEntity, RestoreEntity):
     # ----- Dynamic shape ---------------------------------------------------
 
     def _apply_region_type(self, region_type: int) -> None:
-        """Rewrite options + name + icon to match the zone type."""
-        self._attr_options = dose_options_for_region_type(region_type)
+        """Rewrite name + icon to match the zone type."""
         if region_type == REGION_TYPE_POINT:
             self._attr_icon = "mdi:timer-outline"
             self._attr_translation_key = "watering_duration"
@@ -228,24 +226,28 @@ class DoseSelect(IrrisenseEntity, SelectEntity, RestoreEntity):
     # ----- State ------------------------------------------------------------
 
     @property
-    def current_option(self) -> str | None:
-        sel = self.coordinator.get_dose_selection(self._sn)
-        # If the stored label doesn't belong to the current option set
-        # (e.g. user just switched from Area to Point and the stored value
-        # is "6 mm"), seed with the type default so the UI never shows a
-        # dangling selection. We don't mutate state here — that would be a
-        # side-effect during a read — we just surface the fallback.
-        if sel and sel in (self._attr_options or []):
-            return sel
-        return default_dose_label_for_region_type(
-            self.coordinator.selected_region_type(self._sn)
+    def options(self) -> list[str]:
+        """Presets for the selected zone type, plus a fitting free value.
+
+        Derived on every read so a value set through a Number entity shows
+        here as it is instead of as the type default.
+        """
+        return dose_options_for_region_type(
+            self.coordinator.selected_region_type(self._sn),
+            self.coordinator.get_dose_selection(self._sn),
         )
 
+    @property
+    def current_option(self) -> str | None:
+        # Always one of `options`: the coordinator returns either a fitting
+        # pick (preset, or the free value `options` adds) or the type default.
+        return self.coordinator.get_dose_selection(self._sn)
+
     async def async_select_option(self, option: str) -> None:
-        if option not in (self._attr_options or []):
+        if option not in self.options:
             _LOGGER.warning(
                 "DoseSelect: %r is not one of the current options %s",
-                option, self._attr_options,
+                option, self.options,
             )
             return
         self.coordinator.set_dose_selection(self._sn, option)
@@ -256,13 +258,17 @@ class DoseSelect(IrrisenseEntity, SelectEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
-        # Restore the last dose label. We don't validate against the current
-        # options here because the zone type may not be known yet — the
-        # DoseSelect's `current_option` getter falls back to the type
-        # default when the stored label is off-list, which is safe.
+        # Restore the last dose label. The coordinator refuses one that does
+        # not fit the (already restored) zone's type; the type default then
+        # shows instead.
         last = await self.async_get_last_state()
         if last and last.state and last.state not in ("unknown", "unavailable"):
-            self.coordinator.set_dose_selection(self._sn, last.state)
+            if not self.coordinator.set_dose_selection(self._sn, last.state):
+                _LOGGER.debug(
+                    "DoseSelect: restored dose %r does not fit the selected zone "
+                    "(sn=%s); showing the type default",
+                    last.state, self._sn,
+                )
 
         # Listen for zone-selection changes so we can re-render.
         self.async_on_remove(

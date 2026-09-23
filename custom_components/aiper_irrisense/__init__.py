@@ -27,7 +27,7 @@ from .const import (
     DEFAULT_ENABLE_WEATHER,
     DOMAIN,
 )
-from .coordinator import IrrisenseCoordinator
+from .coordinator import IrrisenseCoordinator, disabled_serials
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -156,16 +156,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Filter out devices the user has disabled in HA's device registry.
     # Devices not yet in the registry are let through so first-time setup
     # registers them; subsequent reloads honour the user's disable.
-    device_registry = dr.async_get(hass)
+    disabled = disabled_serials(hass, entry.entry_id)
 
     def _is_enabled(sn: str) -> bool:
         if not sn:
             return False
-        dev_entry = device_registry.async_get_device(identifiers={(DOMAIN, sn)})
-        if dev_entry is not None and dev_entry.disabled_by is not None:
+        if sn in disabled:
             _LOGGER.info(
-                "Skipping disabled device %s (disabled_by=%s)",
-                sn, dev_entry.disabled_by,
+                "Skipping disabled device %s (disabled_by=%s)", sn, disabled[sn]
             )
             return False
         return True

@@ -96,7 +96,8 @@ REGION_TYPE_POINT: Final = 2  # point   → point_time (MINUTES)
 # waterYield presets — wire floats mapped from the app's three-step selector.
 # The app displays these as "3 mm / 6 mm / 13 mm" but the on-wire floats are
 # 0.1 / 0.25 / 0.5 (confirmed in WrPanelWorkInfoViewModel.startWork$start,
-# APK line 1846). Device firmware appears to silently drop off-preset values.
+# APK line 1846). The device also accepts free values in between; see the
+# free dose bounds below.
 WATER_YIELD_LOW: Final = 0.1     # UI: "3 mm"
 WATER_YIELD_MEDIUM: Final = 0.25  # UI: "6 mm"
 WATER_YIELD_HIGH: Final = 0.5     # UI: "13 mm"
@@ -126,10 +127,11 @@ POINT_TIME_MAX: Final = 150
 # YAML reads naturally ("dose: 6 mm").
 #
 # These dicts are authoritative for two directions:
-#   * label → wire value  (Select → _publish_cmd)
+#   * label → wire value  (Start button, via parse_dose_label)
 #   * wire value → label  (incoming MQTT snapshot → status banner)
-# Neither direction tolerates floats beyond the three presets — the firmware
-# silently drops off-preset values (see coordinator._snap_to_preset).
+# Label → wire also accepts the free "N mm" / "N min" values the Number
+# entities write (see parse_dose_label); the device takes the full range.
+# Wire → label still maps a free value to the nearest preset label.
 WATER_YIELD_LABELS: Final[dict[float, str]] = {
     WATER_YIELD_LOW:    "3 mm",
     WATER_YIELD_MEDIUM: "6 mm",
@@ -147,15 +149,24 @@ DEFAULT_WATER_YIELD_LABEL: Final = WATER_YIELD_LABELS[WATER_YIELD_LOW]    # "3 m
 DEFAULT_POINT_TIME_LABEL:  Final = POINT_TIME_LABELS[POINT_TIME_LOW]      # "1 min"
 
 
-def dose_options_for_region_type(region_type: int | None) -> list[str]:
+def dose_options_for_region_type(
+    region_type: int | None, current: str | None = None
+) -> list[str]:
     """Return the list of human labels the Dose select should show.
 
     Point zones get the minutes presets ("1 min" / "5 min" / "10 min").
     Area / Line (and the unknown-type fallback) get the mm presets.
+    A free ``current`` value that fits the zone type (e.g. "18 mm" typed
+    into the depth Number) is appended, so the select can show it instead
+    of falling back to a preset Start would not send.
     """
     if region_type == REGION_TYPE_POINT:
-        return list(POINT_TIME_LABELS.values())
-    return list(WATER_YIELD_LABELS.values())
+        options = list(POINT_TIME_LABELS.values())
+    else:
+        options = list(WATER_YIELD_LABELS.values())
+    if current and current not in options and dose_fits_region_type(current, region_type):
+        options.append(current)
+    return options
 
 
 def default_dose_label_for_region_type(region_type: int | None) -> str:
@@ -192,6 +203,27 @@ def parse_dose_label(label: str) -> tuple[str, float | int] | None:
     return None
 
 
+def dose_kind_for_region_type(region_type: int | None) -> str:
+    """The ``parse_dose_label`` kind a zone of this type is started with."""
+    return "point_time" if region_type == REGION_TYPE_POINT else "waterYield"
+
+
+def dose_fits_region_type(label: str | None, region_type: int | None) -> bool:
+    """True when ``label`` is a dose Start can send to a zone of this type.
+
+    A minutes value never fits an Area/Line zone and a depth never fits a
+    Point zone: Start would drop it and fall back to the zone default.
+    """
+    parsed = parse_dose_label(label) if label else None
+    return parsed is not None and parsed[0] == dose_kind_for_region_type(region_type)
+
+
+def dose_label_amount(label: str | None) -> float | None:
+    """The number shown in a dose label: 18.0 for "18 mm", 120.0 for "120 min"."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?) (?:mm|min)", label or "")
+    return float(m.group(1)) if m else None
+
+
 def label_for_water_yield(value: float | None) -> str | None:
     """Nearest-preset label for a waterYield float, or None on garbage input."""
     if value is None:
@@ -200,8 +232,8 @@ def label_for_water_yield(value: float | None) -> str | None:
         v = float(value)
     except (TypeError, ValueError):
         return None
-    # Snap to the closest preset so off-preset values (which shouldn't occur
-    # but might on very old firmware echoes) still render sensibly.
+    # Snap to the closest preset so off-preset values (a free dose set via
+    # the depth Number) still render as one of the three labels.
     closest = min(WATER_YIELD_LABELS, key=lambda p: abs(p - v))
     return WATER_YIELD_LABELS[closest]
 

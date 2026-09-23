@@ -1594,11 +1594,11 @@ class IrrisenseApi:
             zone map itself. ``region_type`` here is only used to decide
             which dose field to send.
 
-        Preset rules:
-          * ``waterYield`` legal presets 0.1 / 0.25 / 0.5 (app labels
-            "3 / 6 / 13 mm"). Off-preset values are silently dropped by
-            the firmware; the coordinator snaps before calling this.
-          * ``point_time`` legal presets 1 / 5 / 10 minutes (APK :1844).
+        Dose values (the coordinator clamps both before calling this):
+          * ``waterYield`` presets 0.1 / 0.25 / 0.5 (app labels
+            "3 / 6 / 13 mm"); free values in 0.1..0.9 are accepted.
+          * ``point_time`` presets 1 / 5 / 10 minutes (APK :1844); free
+            values in 1..150 are accepted.
 
         Pesticide mode (area zones only, per APK ``startWork$start``):
           ``mode=0``, ``waterYield=WATER_YIELD_LOW``, plus

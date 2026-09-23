@@ -52,13 +52,12 @@ from .const import (
     POINT_TIME_LOW,
     POINT_TIME_MAX,
     POINT_TIME_MIN,
-    POINT_TIME_PRESETS,
     WATER_YIELD_MAX,
     WATER_YIELD_MIN,
     REGION_TYPE_POINT,
     WATER_YIELD_LOW,
-    WATER_YIELD_PRESETS,
     default_dose_label_for_region_type,
+    dose_fits_region_type,
     label_for_point_time,
     label_for_water_yield,
 )
@@ -118,25 +117,6 @@ def _extract_map_id(body: dict[str, Any] | None) -> int | None:
             except (TypeError, ValueError):
                 pass
     return None
-
-
-def _snap_to_preset(value, presets, label: str):
-    """Return the nearest value in ``presets`` to ``value``.
-
-    Logs a WARNING when the input was off-preset so automations / services
-    calling with arbitrary numbers get visible feedback. Firmware silently
-    drops off-preset setWorkMode frames, so this snap is what makes
-    user-configurable Number entities actually work.
-    """
-    if value in presets:
-        return value
-    snapped = min(presets, key=lambda p: abs(p - value))
-    _LOGGER.warning(
-        "%s=%s is off-preset; snapping to %s (valid presets: %s). "
-        "The firmware silently discards off-preset values.",
-        label, value, snapped, list(presets),
-    )
-    return snapped
 
 
 class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -627,10 +607,9 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
           * ``point_time`` (Point): from the region's ``pointTime``,
             falling back to ``POINT_TIME_LOW`` (1 minute)
 
-        Before publishing we snap off-preset values to the nearest firmware-
-        accepted preset. The device silently drops values outside
-        {0.1, 0.25, 0.5} for waterYield and {1, 5, 10} for point_time
-        (APK line 1844/1846 — no other values are reachable via the app).
+        Before publishing, values are clamped to the device range
+        (0.1..0.9 in for waterYield, 1..150 min for point_time); off-preset
+        values inside that range are sent as they are.
         """
         region = self._region_for(sn, map_id)
 
@@ -910,25 +889,45 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return None
 
     def set_zone_selection(self, sn: str, zone_id: int) -> None:
-        """Persist the user's zone pick and reset dose to the type default.
+        """Persist the user's zone pick.
 
-        Resetting dose on zone change matches the Aiper app (picking a new
-        zone re-shows its three presets with the lowest highlighted) and
-        guarantees the stored label is always valid for the zone's type.
+        The stored dose is left alone: ``get_dose_selection`` only returns it
+        while it fits the selected zone's type, so a depth comes back when
+        the user returns from a Point zone to an Area/Line zone.
         """
         self._zone_selection[sn] = int(zone_id)
-        region = self._region_for(sn, zone_id)
-        rtype = int(region.get("type", 0)) if region else 0
-        self._dose_selection[sn] = default_dose_label_for_region_type(rtype)
         async_dispatcher_send(self.hass, SIGNAL_SELECTION_CHANGED, sn)
 
-    def get_dose_selection(self, sn: str) -> str | None:
-        """Return the currently-picked dose/duration label ("3 mm" / "5 min")."""
-        return self._dose_selection.get(sn)
+    def get_dose_selection(self, sn: str) -> str:
+        """Return the dose label Start will send ("13 mm" / "120 min").
 
-    def set_dose_selection(self, sn: str, label: str) -> None:
-        """Persist the user's dose pick. Label must be one of the six presets."""
+        The stored pick when it fits the selected zone's type, otherwise
+        that type's default. Every dose entity and the Start button read
+        this, so what they show is what Start sends, also after a map
+        refresh changes or removes the selected zone.
+        """
+        rtype = self.selected_region_type(sn)
+        label = self._dose_selection.get(sn)
+        if dose_fits_region_type(label, rtype):
+            return label
+        return default_dose_label_for_region_type(rtype)
+
+    def set_dose_selection(self, sn: str, label: str) -> bool:
+        """Persist the user's dose pick if it fits the selected zone's type.
+
+        Returns False and keeps the previous pick when it does not, e.g. a
+        duration while an Area zone is selected: Start could not send it.
+        Before the zone map is loaded the type is unknown, so the pick is
+        stored as it is (the restore at startup relies on this) and
+        ``get_dose_selection`` checks it once the map is there.
+        """
+        if self.zones_for(sn) and not dose_fits_region_type(
+            label, self.selected_region_type(sn)
+        ):
+            return False
         self._dose_selection[sn] = label
+        async_dispatcher_send(self.hass, SIGNAL_SELECTION_CHANGED, sn)
+        return True
 
     def selected_region_type(self, sn: str) -> int:
         """Convenience for the DoseSelect: 0/1=Area/Line, 2=Point, 0 if unknown."""

@@ -119,6 +119,23 @@ def _extract_map_id(body: dict[str, Any] | None) -> int | None:
     return None
 
 
+def disabled_serials(hass: HomeAssistant, entry_id: str) -> dict[str, str]:
+    """Serial -> ``disabled_by`` for the devices of this entry the user disabled.
+
+    Looked up among the config entry's own devices: device identifiers are
+    only unique within one entry, and Home Assistant 2027.8 stops supporting
+    the registry-wide ``async_get_device`` lookup.
+    """
+    registry = dr.async_get(hass)
+    return {
+        value: str(device.disabled_by)
+        for device in dr.async_entries_for_config_entry(registry, entry_id)
+        if device.disabled_by is not None
+        for domain, value in device.identifiers
+        if domain == DOMAIN
+    }
+
+
 class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Coordinate REST + MQTT data for all Irrisense devices on one account."""
 
@@ -313,16 +330,13 @@ class IrrisenseCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self._last_devlist_refresh = _now
                 await self.hass.async_add_executor_job(self.api.get_devices)
 
-            device_registry = dr.async_get(self.hass)
+            disabled = disabled_serials(self.hass, self.entry.entry_id)
             for dev in self.devices:
                 sn = dev.get("sn")
                 if not sn:
                     continue
                 # Skip devices the user has disabled in HA's device registry.
-                dev_entry = device_registry.async_get_device(
-                    identifiers={(DOMAIN, sn)}
-                )
-                if dev_entry is not None and dev_entry.disabled_by is not None:
+                if sn in disabled:
                     _LOGGER.debug("Skipping disabled device %s in refresh", sn)
                     continue
                 await self._refresh_device(sn, dev)
